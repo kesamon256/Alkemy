@@ -1050,7 +1050,7 @@ public class AlcCanvas extends JPanel implements AlcConstants, MouseListener, Mo
         // Only when a tool that uses it is on
         for (int i = 0; i < Alchemy.plugins.currentAffects.length; i++) {
             String name = Alchemy.plugins.affects[i].getName();
-            if (Alchemy.plugins.currentAffects[i] && (name.equals("Smooth") || name.equals("Repeat"))) {
+            if (Alchemy.plugins.currentAffects[i] && (name.equals("Smooth") || name.equals("Repeat") || name.equals("Blur"))) {
                 showMessage(Alchemy.bundle.getString("motionOnMessage"));
                 return;
             }

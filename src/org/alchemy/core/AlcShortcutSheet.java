@@ -82,7 +82,7 @@ class AlcShortcutSheet extends JDialog implements AlcConstants {
         row(gestures, "Right drag", "Erase whole shapes");
         row(gestures, "Alt + clicks", "Straight lines, let go of Alt to end");
         row(gestures, "Shift + drag", "Solid style: cut out of shapes");
-        row(gestures, "Hold Q", "Smooth / Repeat work while held");
+        row(gestures, "Hold Q", "Smooth / Repeat / Blur work while held");
         row(gestures, "Pen pressure", "Sketch menu: size / opacity");
         group(gestures, "Canvas");
         row(gestures, "Space + drag", "Move the canvas");
