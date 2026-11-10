@@ -252,13 +252,6 @@ public class Displace extends AlcModule implements AlcConstants {
     private final java.util.IdentityHashMap<AlcShape, float[]> movedFirst = new java.util.IdentityHashMap<AlcShape, float[]>();
     /** The noise pattern stays the same for the whole session */
     private static final double STABLE_Z = 3.7;
-    /** For shapes that keep moving on their own (Particles) the noise drifts in time from a new place
-     *  every stroke - so each stroke turns out differently */
-    private double liveSeed, liveZ;
-
-    private double noiseZ() {
-        return canvas.isCreateAnimating() ? STABLE_Z + liveSeed + liveZ : STABLE_Z;
-    }
 
     /** How far a point is moved sideways - by the noise at its place, or a regular wave along the line for Even */
     private double offset(double x, double y, double along) {
@@ -266,7 +259,7 @@ public class Displace extends AlcModule implements AlcConstants {
         if (noiseKind < 0) {
             return reach * Math.sin(along / noiseSize * Math.PI * 2);
         }
-        double n = AlcNoise.noise(noiseKind, x / noiseSize, y / noiseSize, noiseZ());
+        double n = AlcNoise.noise(noiseKind, x / noiseSize, y / noiseSize, STABLE_Z);
         if (noiseKind == AlcNoise.GLITCH) {
             n = Math.round(n * 3) / 3.0;
         }
@@ -423,15 +416,11 @@ public class Displace extends AlcModule implements AlcConstants {
         if (stable) {
             // Nothing builds up, so the last points added as the pen lets go are moved too - but a line
             // the tool turns into a finished outline then is not moved a second time
-            boolean animating = canvas.isCreateAnimating();
-            if (mouseDown || animating) {
+            if (mouseDown) {
                 boolean penDown = canvas.isPenDown();
-                if (animating) {
-                    liveZ += 0.02;
-                }
                 for (int i = 0; i < canvas.createShapes.size(); i++) {
                     AlcShape shape = canvas.createShapes.get(i);
-                    if (!penDown && !animating && !movedFirst.containsKey(shape)) {
+                    if (!penDown && !movedFirst.containsKey(shape)) {
                         continue;
                     }
                     ArrayList<Point2D.Float> spine = shape.getSpine();
@@ -446,7 +435,7 @@ public class Displace extends AlcModule implements AlcConstants {
         }
         // Only while the pen is on the canvas - the tool redraws once more as it lets go,
         // before this module hears about it, and that must not push the line again
-        if ((mouseDown && canvas.isPenDown() && !canvas.isSettling()) || canvas.isCreateAnimating()) {
+        if (mouseDown && canvas.isPenDown() && !canvas.isSettling()) {
             noiseTime += 0.015;
             for (int i = 0; i < canvas.createShapes.size(); i++) {
                 AlcShape shape = canvas.createShapes.get(i);
@@ -512,8 +501,6 @@ public class Displace extends AlcModule implements AlcConstants {
     public void mousePressed(MouseEvent e) {
         mouseDown = true;
         forgetStroke();
-        liveSeed = Math.random() * 1000;
-        liveZ = 0;
         Point p = e.getPoint();
         canvas.redraw();
         oldP = p;
@@ -529,10 +516,7 @@ public class Displace extends AlcModule implements AlcConstants {
     @Override
     public void mouseReleased(MouseEvent e) {
         mouseDown = false;
-        // Shapes that still move keep their record, so they are not moved twice
-        if (!canvas.isCreateAnimating()) {
-            forgetStroke();
-        }
+        forgetStroke();
         oldP = null;
     }
 

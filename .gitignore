@@ -13,3 +13,5 @@ stdout.txt
 .DS_Store
 Thumbs.db
 /tests/shots/
+/tests/*.png
+/tests/*.alchemy

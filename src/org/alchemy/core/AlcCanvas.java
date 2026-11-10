@@ -1042,18 +1042,6 @@ public class AlcCanvas extends JPanel implements AlcConstants, MouseListener, Mo
         }
     }
 
-    /** The shapes being drawn still move on their own (Particles falling after the pen lets go) -
-     *  the affects keep working on them until they are kept */
-    private boolean createAnimating;
-
-    public boolean isCreateAnimating() {
-        return createAnimating;
-    }
-
-    public void setCreateAnimating(boolean animating) {
-        createAnimating = animating;
-    }
-
     /** A short note on the canvas when the motion effects start, so it is clear what Q does */
     private void setMotionCursorHint(boolean on) {
         if (!on || !Alchemy.plugins.hasCurrentAffects()) {
