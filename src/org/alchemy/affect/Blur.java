@@ -31,6 +31,8 @@ public class Blur extends AlcModule implements AlcConstants {
     /** Copies around the ring, plus one in the middle */
     /** Layers of glow around the shape */
     private static final int HALOS = 5;
+    /** Copies in each ring around a blurred cloud of specks */
+    private static final int SPECK_RING = 4;
     private static final int MAX_LEVEL = 30;
     private static final java.util.prefs.Preferences PREFS = java.util.prefs.Preferences.userNodeForPackage(Blur.class);
     private AlcToolBarSubSection subToolBarSection;
@@ -89,6 +91,7 @@ public class Blur extends AlcModule implements AlcConstants {
             return;
         }
         time = System.currentTimeMillis();
+        long time0 = System.nanoTime();
         // Like a soft brush: everything within its reach of the pen blurs - the reach follows the line weight.
         // With Mirror on, the brush also works at the mirrored places of the pen
         double reach = Math.max(12, canvas.getLineWidth() * 3);
@@ -118,12 +121,20 @@ public class Blur extends AlcModule implements AlcConstants {
         if (targets.isEmpty()) {
             return;
         }
+        long t0 = System.nanoTime();
         canvas.beginMotionEdit();
         for (AlcShape t : targets) {
             blur(t);
         }
+        long t1 = System.nanoTime();
         canvas.redraw(true);
+        if (Boolean.getBoolean("alchemy.debugBlur")) {
+            System.out.println("blur pick+make " + (t1 - time0) / 1000000 + " ms (make " + (t1 - t0) / 1000000 + "), redraw " + (System.nanoTime() - t1) / 1000000 + " ms, targets " + targets.size());
+        }
     }
+
+    /** Paths with more pieces than this (charcoal, pencil grain) skip the slow exact geometry */
+    private static final int COMPLEX = 300;
 
     /** Is the shape within reach of the pen - its area, or for a line the line itself */
     private static boolean touches(AlcShape shape, java.awt.geom.Point2D p, double reach) {
@@ -132,11 +143,61 @@ public class Blur extends AlcModule implements AlcConstants {
         if (p.getX() < b.getMinX() - half || p.getX() > b.getMaxX() + half || p.getY() < b.getMinY() - half || p.getY() > b.getMaxY() + half) {
             return false;
         }
+        // Any point of the outline within reach - quick even for thousands of specks
+        double limit = half * half;
+        int segments = 0;
+        java.awt.geom.PathIterator it = shape.getPath().getPathIterator(null);
+        double[] q = new double[6];
+        while (!it.isDone()) {
+            int type = it.currentSegment(q);
+            int last = (type == java.awt.geom.PathIterator.SEG_CUBICTO) ? 4 : (type == java.awt.geom.PathIterator.SEG_QUADTO) ? 2 : 0;
+            if (type != java.awt.geom.PathIterator.SEG_CLOSE) {
+                double dx = q[last] - p.getX(), dy = q[last + 1] - p.getY();
+                if (dx * dx + dy * dy <= limit) {
+                    return true;
+                }
+            }
+            segments++;
+            it.next();
+        }
         if (shape.getStyle() != STYLE_STROKE && shape.getPath().contains(p)) {
             return true;
         }
-        // Closer to the outline (or the line) than the reach
-        return new java.awt.BasicStroke((float) (half * 2)).createStrokedShape(shape.getPath()).contains(p);
+        // Long straight pieces can pass the pen between their points - check those exactly, if it is cheap
+        return segments <= COMPLEX && new java.awt.BasicStroke((float) (half * 2)).createStrokedShape(shape.getPath()).contains(p);
+    }
+
+    /** How many pieces the outline has, and roughly how big its separate parts are (a speck, a grain) */
+    private static double[] pieces(GeneralPath path) {
+        java.awt.geom.PathIterator it = path.getPathIterator(null);
+        double[] q = new double[6];
+        int segments = 0, parts = 0;
+        double sizeSum = 0, minX = 0, minY = 0, maxX = 0, maxY = 0;
+        boolean open = false;
+        while (!it.isDone()) {
+            int type = it.currentSegment(q);
+            if (type == java.awt.geom.PathIterator.SEG_MOVETO) {
+                if (open && parts <= 200) {
+                    sizeSum += Math.max(maxX - minX, maxY - minY);
+                }
+                parts++;
+                minX = maxX = q[0];
+                minY = maxY = q[1];
+                open = true;
+            } else if (type != java.awt.geom.PathIterator.SEG_CLOSE) {
+                int last = (type == java.awt.geom.PathIterator.SEG_CUBICTO) ? 4 : (type == java.awt.geom.PathIterator.SEG_QUADTO) ? 2 : 0;
+                minX = Math.min(minX, q[last]);
+                maxX = Math.max(maxX, q[last]);
+                minY = Math.min(minY, q[last + 1]);
+                maxY = Math.max(maxY, q[last + 1]);
+            }
+            segments++;
+            it.next();
+        }
+        if (open && parts <= 200) {
+            sizeSum += Math.max(maxX - minX, maxY - minY);
+        }
+        return new double[]{segments, parts, parts == 0 ? 1 : sizeSum / Math.min(parts, 200)};
     }
     /** Blur a shape one step more - its copies are made again further apart, in the same place in the drawing */
     private void blur(AlcShape shape) {
@@ -175,7 +236,28 @@ public class Blur extends AlcModule implements AlcConstants {
                 group.copies.add(copy(o, STYLE_STROKE, width, Math.max(1, (int) Math.round(base * 0.3 * core / width))));
             }
         } else {
-            group.copies.addAll(blurSolid(o, radius));
+            double[] info = pieces(o.getPath());
+            if (info[0] > COMPLEX) {
+                // Thousands of specks (charcoal, pencil grain): the specks scatter into a soft cloud -
+                // copies spread in two rings around them, fainter the further they spread. Filling
+                // small specks is quick to draw, unlike wide outlines around thousands of them
+                float speck = (float) Math.max(0.5, info[2]);
+                int coreAlpha = Math.max(1, (int) Math.round(base * Math.max(0.2, speck / (speck + radius * 0.5))));
+                group.copies.add(copy(o, o.getStyle(), o.getLineWidth(), coreAlpha));
+                for (int ring = 1; ring <= 2; ring++) {
+                    double r = radius * ring / 2.0;
+                    int ringAlpha = Math.max(1, (int) Math.round(base * 0.28 * speck / (speck + r)));
+                    for (int k = 0; k < SPECK_RING; k++) {
+                        double a = (k + ring * 0.5) * Math.PI * 2 / SPECK_RING;
+                        AlcShape moved = o.customClone((GeneralPath) o.getPath().createTransformedShape(
+                                AffineTransform.getTranslateInstance(Math.cos(a) * r, Math.sin(a) * r)));
+                        moved.setAlpha(ringAlpha);
+                        moved.setSpine(null);
+                        group.copies.add(moved);
+                    }
+                }            } else {
+                group.copies.addAll(blurSolid(o, radius));
+            }
         }
         if (group.copies.isEmpty()) {
             group.copies.add(copy(o, o.getStyle(), o.getLineWidth(), base));
