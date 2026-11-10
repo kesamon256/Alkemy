@@ -16,6 +16,15 @@ public class BlurTest {
         return b;
     }
 
+    /** The widest glow line */
+    static double widest() {
+        double w = 0;
+        for (AlcShape s : Alchemy.canvas.shapes) {
+            w = Math.max(w, s.getLineWidth());
+        }
+        return w;
+    }
+
     public static void main(String[] args) throws Exception {
         SketchTest.dir = args[0];
         Alchemy.main(new String[0]);
@@ -59,16 +68,17 @@ public class BlurTest {
         UndoSmokeTest.check("without Q nothing happens (" + c.shapes.size() + ")", c.shapes.size() == 2);
         SmoothRepeatTest.hover(axis[0] - 250, 300, true);
         int once = c.shapes.size();
-        double w1 = bounds(0).getWidth();
+        double w1 = widest();
         for (int i = 0; i < 4; i++) {
             SmoothRepeatTest.hover(axis[0] - 250 + i, 300, true);
         }
         int more = c.shapes.size();
         Rectangle2D all = bounds(0);
+        double w2 = widest();
         SmoothRepeatTest.hover(axis[0] - 250, 300, false);
-        UndoSmokeTest.check("Q blurs the loop and its mirror into soft copies (" + once + " shapes)", once == 50);
-        UndoSmokeTest.check(String.format("more passes blur more (width %.0f -> %.0f -> %.0f) without more shapes (%d)", w0, w1, all.getWidth(), more),
-                more == 50 && all.getWidth() > w1 + 4);
+        UndoSmokeTest.check("Q blurs the loop and its mirror into soft copies (" + once + " shapes)", once == 12);
+        UndoSmokeTest.check(String.format("more passes blur more (glow %.0f -> %.0f px) without more shapes (%d)", w1, w2, more),
+                more == 12 && w2 > w1 + 4);
         UndoSmokeTest.check(String.format("both sides stay mirror images (centre %.1f, axis %d)", all.getCenterX(), axis[0]),
                 Math.abs(all.getCenterX() - axis[0]) < 2);
         Thread.sleep(900);
@@ -78,6 +88,30 @@ public class BlurTest {
             }
         });
         UndoSmokeTest.check("one undo takes all the blurring back (" + c.shapes.size() + ")", c.shapes.size() == 2);
+        // A thin line (like the Flow brush) gets soft, it is not copied off to the sides
+        final int lineY = 560;
+        SwingUtilities.invokeAndWait(new Runnable() {
+            public void run() {
+                Alchemy.canvas.setLineWidth(2);
+                UndoSmokeTest.stroke(axis[0] - 400, lineY, axis[0] - 120, lineY + 20);
+            }
+        });
+        int lineIndex = c.shapes.size() - 2;
+        Rectangle2D lineBounds = c.shapes.get(lineIndex).getPath().getBounds2D();
+        for (int i = 0; i < 3; i++) {
+            SmoothRepeatTest.hover(axis[0] - 260, lineY + 10 + (int) (20 * Math.sin(5.0)), true);
+        }
+        SmoothRepeatTest.hover(axis[0] - 260, lineY + 10, false);
+        boolean inPlace = true;
+        int lineCopies = 0;
+        for (AlcShape s : c.shapes) {
+            Rectangle2D b = s.getPath().getBounds2D();
+            if (b.getCenterX() < axis[0] && b.getMinY() > lineY - 40) {
+                lineCopies++;
+                inPlace &= Math.abs(b.getMinX() - lineBounds.getMinX()) < 0.5 && Math.abs(b.getMaxY() - lineBounds.getMaxY()) < 0.5;
+            }
+        }
+        UndoSmokeTest.check("a thin line blurs in place - glow around it, no copies off to the side (" + lineCopies + " layers)", lineCopies == 6 && inPlace);
         SwingUtilities.invokeAndWait(new Runnable() {
             public void run() {
                 try {

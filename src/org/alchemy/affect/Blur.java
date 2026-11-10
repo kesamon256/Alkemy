@@ -22,14 +22,15 @@ import org.alchemy.core.*;
 
 /**
  * Blur - like Smooth and Repeat it works on the finished drawing under the pen while Q is held.
- * A shape is softened into a soft halo of see-through copies around where it was; every pass
- * over it spreads them a little further, so it blurs more and more without piling up shapes.
+ * A shape is softened by a glow around it - its outline drawn ever wider and fainter - so lines and
+ * solid shapes alike get soft edges; every pass spreads the glow further without piling up shapes.
  * With Mirror on the mirror image blurs the same way. A burst of blurring is one undo step.
  */
 public class Blur extends AlcModule implements AlcConstants {
 
     /** Copies around the ring, plus one in the middle */
-    private static final int RING = 8, RINGS = 3;
+    /** Layers of glow around the shape */
+    private static final int HALOS = 5;
     private static final int MAX_LEVEL = 30;
     private static final java.util.prefs.Preferences PREFS = java.util.prefs.Preferences.userNodeForPackage(Blur.class);
     private AlcToolBarSubSection subToolBarSection;
@@ -78,6 +79,9 @@ public class Blur extends AlcModule implements AlcConstants {
         subToolBarSection.add(slider);
     }
 
+    /** Blurs at most this many shapes on one pass, so a dense area does not stall the pen */
+    private static final int MAX_PER_PASS = 120;
+
     @Override
     public void mouseMoved(MouseEvent e) {
         // Only while Q is held - moving the pen over the drawing otherwise leaves it alone
@@ -85,30 +89,34 @@ public class Blur extends AlcModule implements AlcConstants {
             return;
         }
         time = System.currentTimeMillis();
-        Point pt = e.getPoint();
-        int target = -1;
-        for (int i = canvas.shapes.size() - 1; i >= 0; i--) {
-            if (canvas.shapes.get(i).getPath().contains(pt) || nearStroke(canvas.shapes.get(i), pt)) {
-                target = i;
+        // Like a soft brush: everything within its reach of the pen blurs - the reach follows the line weight.
+        // With Mirror on, the brush also works at the mirrored places of the pen
+        double reach = Math.max(12, canvas.getLineWidth() * 3);
+        List<java.awt.geom.Point2D> centres = new ArrayList<java.awt.geom.Point2D>();
+        for (AffineTransform mirror : canvas.symmetryTransforms()) {
+            centres.add(mirror.transform(e.getPoint(), null));
+        }
+        // Pick the shapes first - one blur per group of copies - then blur them
+        java.util.LinkedHashSet<AlcShape> targets = new java.util.LinkedHashSet<AlcShape>();
+        for (AlcShape shape : canvas.shapes) {
+            if (targets.size() >= MAX_PER_PASS) {
                 break;
             }
-        }
-        if (target < 0) {
-            return;
-        }
-        AlcShape shape = canvas.shapes.get(target);
-        Blurred group = blurs.get(shape);
-        AlcShape original = (group != null) ? group.original : shape;
-        // With Mirror on, the mirror image blurs too - found by its outline, as in Smooth
-        List<AlcShape> targets = new ArrayList<AlcShape>();
-        targets.add(shape);
-        List<AffineTransform> mirrors = canvas.symmetryTransforms();
-        for (int m = 1; m < mirrors.size(); m++) {
-            Rectangle2D expected = mirrors.get(m).createTransformedShape(original.getPath()).getBounds2D();
-            AlcShape twin = findTwin(expected, targets);
-            if (twin != null) {
-                targets.add(twin);
+            Blurred group = blurs.get(shape);
+            AlcShape look = (group != null) ? group.original : shape;
+            AlcShape key = (group != null) ? group.copies.get(0) : shape;
+            if (targets.contains(key)) {
+                continue;
             }
+            for (java.awt.geom.Point2D p : centres) {
+                if (touches(look, p, reach)) {
+                    targets.add(key);
+                    break;
+                }
+            }
+        }
+        if (targets.isEmpty()) {
+            return;
         }
         canvas.beginMotionEdit();
         for (AlcShape t : targets) {
@@ -117,41 +125,19 @@ public class Blur extends AlcModule implements AlcConstants {
         canvas.redraw(true);
     }
 
-    /** A thin line counts as under the pen when the pen is close to it */
-    private static boolean nearStroke(AlcShape shape, Point pt) {
-        if (shape.getStyle() != STYLE_STROKE) {
+    /** Is the shape within reach of the pen - its area, or for a line the line itself */
+    private static boolean touches(AlcShape shape, java.awt.geom.Point2D p, double reach) {
+        double half = shape.getLineWidth() / 2.0 + reach;
+        Rectangle2D b = shape.getPath().getBounds2D();
+        if (p.getX() < b.getMinX() - half || p.getX() > b.getMaxX() + half || p.getY() < b.getMinY() - half || p.getY() > b.getMaxY() + half) {
             return false;
         }
-        float reach = Math.max(8F, shape.getLineWidth() + 6F);
-        if (!shape.getPath().getBounds2D().intersects(pt.x - reach, pt.y - reach, reach * 2, reach * 2)) {
-            return false;
+        if (shape.getStyle() != STYLE_STROKE && shape.getPath().contains(p)) {
+            return true;
         }
-        return new java.awt.BasicStroke(reach).createStrokedShape(shape.getPath()).contains(pt);
+        // Closer to the outline (or the line) than the reach
+        return new java.awt.BasicStroke((float) (half * 2)).createStrokedShape(shape.getPath()).contains(p);
     }
-    /** The shape (or blurred group) whose unblurred outline matches the mirrored one */
-    private AlcShape findTwin(Rectangle2D expected, List<AlcShape> skip) {
-        AlcShape best = null;
-        double bestError = 2.0;
-        for (AlcShape other : canvas.shapes) {
-            if (skip.contains(other)) {
-                continue;
-            }
-            Blurred g = blurs.get(other);
-            AlcShape look = (g != null) ? g.original : other;
-            if (g != null && skip.contains(g.copies.get(0))) {
-                continue;
-            }
-            Rectangle2D b = look.getPath().getBounds2D();
-            double error = Math.abs(b.getMinX() - expected.getMinX()) + Math.abs(b.getMinY() - expected.getMinY())
-                    + Math.abs(b.getMaxX() - expected.getMaxX()) + Math.abs(b.getMaxY() - expected.getMaxY());
-            if (error < bestError) {
-                best = other;
-                bestError = error;
-            }
-        }
-        return best;
-    }
-
     /** Blur a shape one step more - its copies are made again further apart, in the same place in the drawing */
     private void blur(AlcShape shape) {
         Blurred group = blurs.get(shape);
@@ -178,17 +164,23 @@ public class Blur extends AlcModule implements AlcConstants {
         group.level++;
         AlcShape o = group.original;
         double radius = group.level * amount * 0.5;
-        // Three rings of copies inside each other - where they all overlap (the middle) they add up
-        // to the full colour, towards the edge fewer overlap and it fades out, like a real blur
-        int count = 1 + RINGS * RING;
-        double each = 1 - Math.pow(1 - 0.94, 1.0 / count);
-        int copyAlpha = Math.max(1, (int) Math.round(o.getAlpha() * each));
-        group.copies.add(copy(o, 0, 0, Math.max(1, (int) Math.round(o.getAlpha() * Math.min(1, each * 2.5)))));
-        for (int ring = 1; ring <= RINGS; ring++) {
-            double r = radius * ring / RINGS;
-            for (int k = 0; k < RING; k++) {
-                double a = (k + ring * 0.37 + (group.level % 2) * 0.5) * Math.PI * 2 / RING;
-                group.copies.add(copy(o, Math.cos(a) * r, Math.sin(a) * r, copyAlpha));
+        int base = o.getAlpha();
+        if (o.getStyle() == STYLE_STROKE) {
+            // A line keeps its ink - spread over a wider band it gets fainter, as a real blur does.
+            // Many fine lines on top of each other (the Flow brush) go soft without turning into a blot
+            float core = Math.max(0.5F, o.getLineWidth());
+            group.copies.add(copy(o, STYLE_STROKE, core, Math.max(1, (int) Math.round(base * Math.max(0.12, core / (core + radius))))));
+            for (int k = 1; k <= HALOS; k++) {
+                float width = core + (float) (2 * radius * k / HALOS);
+                group.copies.add(copy(o, STYLE_STROKE, width, Math.max(1, (int) Math.round(base * 0.3 * core / width))));
+            }
+        } else {
+            // A solid shape keeps its body and gets a soft edge - its outline drawn ever wider and
+            // fainter: close to the edge all the layers overlap and it is dark, further out it fades
+            group.copies.add(copy(o, o.getStyle(), o.getLineWidth(), Math.max(1, (int) Math.round(base * Math.max(0.45, 1 - 0.06 * group.level)))));
+            int haloAlpha = Math.max(1, (int) Math.round(base * (1 - Math.pow(1 - 0.6, 1.0 / HALOS))));
+            for (int k = 1; k <= HALOS; k++) {
+                group.copies.add(copy(o, STYLE_STROKE, Math.max(0.5F, (float) (2 * radius * k / HALOS)), haloAlpha));
             }
         }
         canvas.shapes.addAll(index, group.copies);
@@ -197,11 +189,12 @@ public class Blur extends AlcModule implements AlcConstants {
         }
     }
 
-    private static AlcShape copy(AlcShape o, double dx, double dy, int alpha) {
-        GeneralPath moved = (GeneralPath) o.getPath().createTransformedShape(AffineTransform.getTranslateInstance(dx, dy));
-        AlcShape c = o.customClone(moved);
+    /** The same outline, drawn filled or as a line of the given width */
+    private static AlcShape copy(AlcShape o, int style, float lineWidth, int alpha) {
+        AlcShape c = o.customClone((GeneralPath) o.getPath().clone());
+        c.setStyle(style);
+        c.setLineWidth(lineWidth);
         c.setAlpha(alpha);
         c.setSpine(null);
         return c;
-    }
-}
+    }}
