@@ -91,6 +91,7 @@ public class ParticleShapes extends AlcModule implements AlcConstants {
     @Override
     protected void cleared() {
         stopSettling();
+        canvas.setCreateAnimating(false);
         live.clear();
         resting.clear();
     }
@@ -200,6 +201,8 @@ public class ParticleShapes extends AlcModule implements AlcConstants {
             canvas.createShapes.add(inkLine);
         }
         emit(last, 0, 0, 3);
+        // The particles move on their own until they are kept - the affects keep working on them
+        canvas.setCreateAnimating(true);
         canvas.redraw();
     }
 
@@ -237,7 +240,7 @@ public class ParticleShapes extends AlcModule implements AlcConstants {
         last = null;
         if (live.isEmpty()) {
             canvas.redraw();
-            canvas.commitShapes();
+            keep();
             return;
         }
         // The particles finish falling on the canvas, then become part of the drawing
@@ -250,7 +253,7 @@ public class ParticleShapes extends AlcModule implements AlcConstants {
                 canvas.redraw();
                 if (live.isEmpty()) {
                     stopSettling();
-                    canvas.commitShapes();
+                    keep();
                 }
             }
         });
@@ -274,6 +277,12 @@ public class ParticleShapes extends AlcModule implements AlcConstants {
             step();
         }
         canvas.redraw();
+        keep();
+    }
+
+    /** The stroke has landed - it becomes part of the drawing */
+    private void keep() {
+        canvas.setCreateAnimating(false);
         canvas.commitShapes();
     }
 
@@ -413,7 +422,8 @@ public class ParticleShapes extends AlcModule implements AlcConstants {
             f.x += f.vx;
             f.y += f.vy;
             if (f.trail != null) {
-                f.trail.lineTo(f.x, f.y);
+                // The shape's own outline - an affect (Displace) may have given it a new one
+                f.shape.getPath().lineTo(f.x, f.y);
             }
             if (f.spine != null) {
                 float left = 1F - f.age / (float) f.life;

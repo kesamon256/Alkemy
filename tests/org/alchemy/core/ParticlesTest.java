@@ -25,6 +25,16 @@ public class ParticlesTest {
         });
     }
 
+    /** Wait until the particles have landed and been kept - at most 10 s */
+    static void waitLanded() throws Exception {
+        for (int i = 0; i < 100; i++) {
+            Thread.sleep(100);
+            if (counts()[1] == 0 && !Alchemy.canvas.isCreateAnimating()) {
+                return;
+            }
+        }
+    }
+
     static int[] counts() throws Exception {
         final int[] n = new int[2];
         SwingUtilities.invokeAndWait(new Runnable() {
@@ -82,7 +92,7 @@ public class ParticlesTest {
             int before = counts()[0];
             stroke(120 + (k % 2) * 650, 520 + (k % 2) * 650, 250 + (k / 2) * 330);
             int[] during = counts();
-            Thread.sleep(3500);
+            waitLanded();
             int[] after = counts();
             UndoSmokeTest.check(String.format("%s: falling after the pen lets go (%d moving), then kept (%d shapes, %d left moving)",
                     names[k], during[1], after[0] - before, after[1]), after[0] > before && after[1] == 0);
@@ -109,7 +119,7 @@ public class ParticlesTest {
         });
         int before = counts()[0];
         stroke(560, 700, 760);
-        Thread.sleep(3500);
+        waitLanded();
         int added = counts()[0] - before;
         UndoSmokeTest.check("glitter with Mirror - every shape is doubled (" + added + ")", added >= 6 && added % 2 == 0);
         SwingUtilities.invokeAndWait(new Runnable() {
