@@ -68,17 +68,17 @@ public class BlurTest {
         UndoSmokeTest.check("without Q nothing happens (" + c.shapes.size() + ")", c.shapes.size() == 2);
         SmoothRepeatTest.hover(axis[0] - 250, 300, true);
         int once = c.shapes.size();
-        double w1 = widest();
+        double w1 = bounds(0).getWidth();
         for (int i = 0; i < 4; i++) {
             SmoothRepeatTest.hover(axis[0] - 250 + i, 300, true);
         }
         int more = c.shapes.size();
         Rectangle2D all = bounds(0);
-        double w2 = widest();
+        double w2 = bounds(0).getWidth();
         SmoothRepeatTest.hover(axis[0] - 250, 300, false);
-        UndoSmokeTest.check("Q blurs the loop and its mirror into soft copies (" + once + " shapes)", once == 12);
-        UndoSmokeTest.check(String.format("more passes blur more (glow %.0f -> %.0f px) without more shapes (%d)", w1, w2, more),
-                more == 12 && w2 > w1 + 4);
+        UndoSmokeTest.check("Q blurs the loop and its mirror into soft copies (" + once + " shapes)", once == 18);
+        UndoSmokeTest.check(String.format("more passes blur more (width %.0f -> %.0f px) without more shapes (%d)", w1, w2, more),
+                more == 18 && w2 > w1 + 4);
         UndoSmokeTest.check(String.format("both sides stay mirror images (centre %.1f, axis %d)", all.getCenterX(), axis[0]),
                 Math.abs(all.getCenterX() - axis[0]) < 2);
         Thread.sleep(900);

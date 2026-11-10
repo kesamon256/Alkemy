@@ -175,13 +175,10 @@ public class Blur extends AlcModule implements AlcConstants {
                 group.copies.add(copy(o, STYLE_STROKE, width, Math.max(1, (int) Math.round(base * 0.3 * core / width))));
             }
         } else {
-            // A solid shape keeps its body and gets a soft edge - its outline drawn ever wider and
-            // fainter: close to the edge all the layers overlap and it is dark, further out it fades
-            group.copies.add(copy(o, o.getStyle(), o.getLineWidth(), Math.max(1, (int) Math.round(base * Math.max(0.45, 1 - 0.06 * group.level)))));
-            int haloAlpha = Math.max(1, (int) Math.round(base * (1 - Math.pow(1 - 0.6, 1.0 / HALOS))));
-            for (int k = 1; k <= HALOS; k++) {
-                group.copies.add(copy(o, STYLE_STROKE, Math.max(0.5F, (float) (2 * radius * k / HALOS)), haloAlpha));
-            }
+            group.copies.addAll(blurSolid(o, radius));
+        }
+        if (group.copies.isEmpty()) {
+            group.copies.add(copy(o, o.getStyle(), o.getLineWidth(), base));
         }
         canvas.shapes.addAll(index, group.copies);
         for (AlcShape c : group.copies) {
@@ -189,6 +186,56 @@ public class Blur extends AlcModule implements AlcConstants {
         }
     }
 
+    /** Layers inside and outside the edge of a solid shape */
+    private static final int SOLID_STEPS = 4;
+
+    /**
+     * A solid shape blurred like a picture: its area shrunk and grown in steps, each filled so
+     * that together they fade smoothly - full colour deep inside, about half at the edge, nothing
+     * a blur radius outside. Worked out from the closed outline, so every edge gets soft.
+     */
+    private static List<AlcShape> blurSolid(AlcShape o, double radius) {
+        java.awt.geom.Area body = new java.awt.geom.Area(o.getPath());
+        List<java.awt.geom.Area> layers = new ArrayList<java.awt.geom.Area>();
+        // Outermost first: grown by radius ... the shape itself ... shrunk by radius
+        for (int j = SOLID_STEPS; j >= -SOLID_STEPS; j--) {
+            double d = radius * Math.abs(j) / SOLID_STEPS;
+            if (j == 0 || d < 0.3) {
+                layers.add(new java.awt.geom.Area(body));
+                continue;
+            }
+            java.awt.geom.Area band = new java.awt.geom.Area(new java.awt.BasicStroke((float) (d * 2),
+                    java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND).createStrokedShape(body));
+            java.awt.geom.Area layer = new java.awt.geom.Area(body);
+            if (j > 0) {
+                layer.add(band);
+            } else {
+                layer.subtract(band);
+            }
+            layers.add(layer);
+        }
+        // How dark each zone should end up (zone z lies inside the z outermost layers), and the
+        // opacity of each layer that gets there when they are painted over each other
+        int count = layers.size();
+        double opacity = o.getAlpha() / 255.0;
+        List<AlcShape> copies = new ArrayList<AlcShape>();
+        double before = 0;
+        for (int z = 1; z <= count; z++) {
+            double target = opacity * 0.5 * (1 - Math.cos(Math.PI * z / count));
+            double layerAlpha = (before >= 1) ? 0 : 1 - (1 - target) / (1 - before);
+            before = target;
+            java.awt.geom.Area layer = layers.get(z - 1);
+            if (layer.isEmpty() || layerAlpha <= 0) {
+                continue;
+            }
+            AlcShape c = o.customClone(new GeneralPath(layer));
+            c.setStyle(STYLE_FILL);
+            c.setAlpha(Math.max(1, Math.min(255, (int) Math.round(layerAlpha * 255))));
+            c.setSpine(null);
+            copies.add(c);
+        }
+        return copies;
+    }
     /** The same outline, drawn filled or as a line of the given width */
     private static AlcShape copy(AlcShape o, int style, float lineWidth, int alpha) {
         AlcShape c = o.customClone((GeneralPath) o.getPath().clone());
