@@ -1,0 +1,187 @@
+/*
+ *  This file is part of the Alchemy project - http://al.chemy.org
+ * 
+ *  Copyright (c) 2007-2010 Karl D.D. Willis
+ * 
+ *  Alchemy is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ * 
+ *  Alchemy is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ * 
+ *  You should have received a copy of the GNU General Public License
+ *  along with Alchemy.  If not, see <http://www.gnu.org/licenses/>.
+ * 
+ */
+package org.alchemy.core;
+
+import java.awt.Color;
+import java.awt.Cursor;
+import java.awt.Font;
+import java.awt.Point;
+import java.awt.Toolkit;
+import java.awt.image.MemoryImageSource;
+import java.util.Locale;
+
+/**
+ * Constant values used in Alchemy
+ */
+public interface AlcConstants {
+
+    //////////////////////////////////////////////////////////////
+    // PLATFORM INFO
+    //////////////////////////////////////////////////////////////
+    /** OS: Windows (1) */
+    static final int OS_WINDOWS = 1;
+    /** OS: Mac (2) */
+    static final int OS_MAC = 2;
+    /** OS: Linux (3) */
+    static final int OS_LINUX = 3;
+    /** OS: Other (0) */
+    static final int OS_OTHER = 0;
+    /** Convenience access to the {@link Toolkit} */
+    static final Toolkit TOOLKIT = Toolkit.getDefaultToolkit();
+    /** Modifier flags for the shortcut key used to trigger menus. (Cmd on Mac OS X, Ctrl on Linux and Windows) */
+    static final int KEY_MODIFIER = TOOLKIT.getMenuShortcutKeyMask();
+    /** Full name of the Java version eg 1.5.0_11 */
+    static final String JAVA_VERSION_NAME = System.getProperty("java.version");
+    /** Version of Java that's in use, whether 1.1 or 1.3 or whatever stored as a float */
+    static final float JAVA_VERSION = new Float(JAVA_VERSION_NAME.substring(0, 3)).floatValue();
+    /** Name of the OS */
+    static final String OS_NAME = System.getProperty("os.name");
+    /** The users name */
+    static final String USER_NAME = System.getProperty("user.name");
+    /** The file separator used on this OS */
+    static final String DIR_SEPARATOR = System.getProperty("file.separator");
+    /** The users home directory */
+    static final String DIR_HOME = System.getProperty("user.home");
+    /** The users destop directory */
+    static final String DIR_DESKTOP = System.getProperty("user.home") + DIR_SEPARATOR + "Desktop";
+    /** The default temp directory */
+    static final String DIR_TEMP = System.getProperty("java.io.tmpdir");
+    /** Default Locale */
+    static final Locale LOCALE = Locale.getDefault();
+    //
+    //////////////////////////////////////////////////////////////
+    // MATH CONSTANTS
+    //////////////////////////////////////////////////////////////
+    static final float MATH_PI = (float) Math.PI;
+    static final float MATH_HALF_PI = MATH_PI / 2.0f;
+    static final float MATH_THIRD_PI = MATH_PI / 3.0f;
+    static final float MATH_QUARTER_PI = MATH_PI / 4.0f;
+    static final float MATH_TWO_PI = MATH_PI * 2.0f;
+    static final float MATH_DEG_TO_RAD = MATH_PI / 180.0f;
+    static final float MATH_RAD_TO_DEG = 180.0f / MATH_PI;
+    //
+    //////////////////////////////////////////////////////////////
+    // SHAPE STYLE
+    //////////////////////////////////////////////////////////////
+    /** Shape Style: Stroke (1)  */
+    static final int STYLE_STROKE = 1;
+    /** Shape Style: Fill (2)  */
+    static final int STYLE_FILL = 2;
+    /** Shape Style: Both (3) - a full outline over a light tint of the same colour */
+    static final int STYLE_BOTH = 3;
+    /** Line pattern of stroked shapes: solid, dashed or dotted */
+    static final int DASH_NONE = 0;
+    static final int DASH_DASHED = 1;
+    static final int DASH_DOTTED = 2;
+    /** Shape Style: Clip (4) - Only used with the PDF Renderer */
+    static final int STYLE_CLIP = 4;    //
+    //////////////////////////////////////////////////////////////
+    // MODULE TYPES
+    //////////////////////////////////////////////////////////////
+    /** Module Type: CREATE (1)  */
+    static final int MODULE_CREATE = 1;
+    /** Module Type: AFFECT (2)  */
+    static final int MODULE_AFFECT = 2;
+    //
+    //////////////////////////////////////////////////////////////
+    // CURSORS 
+    //////////////////////////////////////////////////////////////
+    /** Cursor - Default Cursor */
+    static final Cursor CURSOR_ARROW = Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR);
+    /** Cursor - Cross Cursor */
+    static final Cursor CURSOR_CROSS = Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR);
+    /** Cursor - Hand Cursor */
+    static final Cursor CURSOR_HAND = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR);
+    /** Cursor - Move Cursor */
+    static final Cursor CURSOR_MOVE = Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR);
+    /** Cursor - Text Cursor */
+    static final Cursor CURSOR_TEXT = Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR);
+    /** Cursor - Wait Cursor */
+    static final Cursor CURSOR_WAIT = Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR);
+    /** Cursor - Blank Cursor */
+    static final Cursor CURSOR_BLANK = TOOLKIT.createCustomCursor(
+            Toolkit.getDefaultToolkit().createImage(new MemoryImageSource(16, 16, new int[16 * 16], 0, 16)),
+            new Point(0, 0),
+            "Blank");
+    /** Cursor - Circle Cursor used with the color picker */
+    static final Cursor CURSOR_CIRCLE = AlcUtil.getCursor("cursor-circle.png");
+    /** Cursor - Zoom Cursor */
+    static final Cursor CURSOR_ZOOM = AlcUtil.getCursor("cursor-zoom.png");
+    /** Cursor - Eyedropper Cursor */
+    static final Cursor CURSOR_EYEDROPPER = AlcUtil.getCursor("cursor-eyedropper.png");
+    //////////////////////////////////////////////////////////////
+    // PEN TYPES
+    //////////////////////////////////////////////////////////////
+    /** Pen Type: STYLUS (1)  */
+    static final int PEN_STYLUS = 1;
+    /** Pen Type: ERASER (2)  */
+    static final int PEN_ERASER = 2;
+    /** Pen Type: CURSOR (3)  */
+    static final int PEN_CURSOR = 3;
+    //
+    //////////////////////////////////////////////////////////////
+    // FONTS 
+    //////////////////////////////////////////////////////////////
+    /** UI font family - Segoe UI on Windows, the platform sans serif elsewhere */
+    static final String FONT_FAMILY = AlcUtil.getUiFontFamily();
+    /** Font - plain 10pt */
+    static final Font FONT_SMALLER = new Font(FONT_FAMILY, Font.PLAIN, 10);
+    /** Font - plain 11pt */
+    static final Font FONT_SMALL = new Font(FONT_FAMILY, Font.PLAIN, 11);
+    /** Font - plain 12pt */
+    static final Font FONT_MEDIUM = new Font(FONT_FAMILY, Font.PLAIN, 12);
+    /** Font - plain 13pt */
+    static final Font FONT_LARGE = new Font(FONT_FAMILY, Font.PLAIN, 13);
+    /** Font - bold 11pt */
+    static final Font FONT_SMALL_BOLD = new Font(FONT_FAMILY, Font.BOLD, 11);
+    /** Font - bold 12pt */
+    static final Font FONT_MEDIUM_BOLD = new Font(FONT_FAMILY, Font.BOLD, 12);
+    /** Font - bold 13pt */
+    static final Font FONT_LARGE_BOLD = new Font(FONT_FAMILY, Font.BOLD, 13);
+    //
+
+    //////////////////////////////////////////////////////////////
+    // INTERFACE COLORS - dark theme
+    //////////////////////////////////////////////////////////////
+    /** UI background color */
+    static final Color COLOR_UI_BG = new Color(32, 34, 37);
+    /** UI background start color (main toolbar) */
+    static final Color COLOR_UI_START = new Color(27, 28, 31);
+    /** UI background end color (main toolbar) */
+    static final Color COLOR_UI_END = new Color(27, 28, 31);
+    /** UI background of the sub toolbar */
+    static final Color COLOR_UI_SUB = new Color(35, 37, 41);
+    /** UI menu bar background */
+    static final Color COLOR_UI_MENUBAR = new Color(21, 22, 24);
+    /** UI line color */
+    static final Color COLOR_UI_LINE = new Color(15, 16, 18);
+    /** UI line alpha color - 50% Alpha for soft corners */
+    static final Color COLOR_UI_LINE_ALPHA = new Color(15, 16, 18, 128);
+    /** UI highlight color */
+    static final Color COLOR_UI_HIGHLIGHT = new Color(46, 48, 53);
+    /** UI box color - used for the CheckBox Boxes */
+    static final Color COLOR_UI_BOX = new Color(80, 84, 90);
+    /** UI text color */
+    static final Color COLOR_UI_TEXT = new Color(222, 224, 228);
+    /** UI secondary text color */
+    static final Color COLOR_UI_TEXT_DIM = new Color(150, 154, 160);
+    /** UI accent color - selection, active tools */
+    static final Color COLOR_UI_ACCENT = new Color(77, 156, 255);
+}

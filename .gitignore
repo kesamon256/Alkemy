@@ -1,0 +1,15 @@
+﻿# Build output
+/build/
+/dist/
+/release/
+# Logs written by the app when debugging
+pen-log.txt
+stderr.txt
+stdout.txt
+# Editors and OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+/tests/shots/
