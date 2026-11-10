@@ -41,9 +41,9 @@ import org.alchemy.core.*;
 public class BrushShapes extends AlcModule implements AlcConstants {
 
     private static final int PENCIL = 0, INK = 1, MARKER = 2, CHARCOAL = 3,
-            LINER = 4, BRUSHPEN = 5, SKETCHY = 6, HATCHING = 7;
-    private static final String[] NAMES = {"Pencil", "Ink", "Marker", "Charcoal", "Liner", "Brush pen", "Sketchy", "Hatching"};
-    private static final String[] ICONS = {"pencil.png", "ink.png", "marker.png", "charcoal.png", "liner.png", "brushpen.png", "sketchy.png", "hatching.png"};
+            LINER = 4, BRUSHPEN = 5, SKETCHY = 6, HATCHING = 7, FLOW = 8;
+    private static final String[] NAMES = {"Pencil", "Ink", "Marker", "Charcoal", "Liner", "Brush pen", "Sketchy", "Hatching", "Flow"};
+    private static final String[] ICONS = {"pencil.png", "ink.png", "marker.png", "charcoal.png", "liner.png", "brushpen.png", "sketchy.png", "hatching.png", "flow.png"};
     private static final String[] TIPS = {
         "Pencil - fine grainy strands, darker with more pressure",
         "Ink pen - smooth line that tapers at the ends and follows the pressure",
@@ -52,7 +52,8 @@ public class BrushShapes extends AlcModule implements AlcConstants {
         "Liner - quick confident lines, thinner the faster you draw, with sharp flicks",
         "Brush pen - bold dynamic line, swells when slow or pressed, snaps thin on fast flicks",
         "Sketchy - a few loose overlapping lines like a quick gesture sketch",
-        "Hatching - parallel diagonal strokes for shading"};
+        "Hatching - parallel diagonal strokes for shading",
+        "Flow - a swarm of fine trails that drift on a hidden current and circle the pen, like ink in water"};
     private AlcToolBarSubSection subToolBarSection;
     private final AlcSubToggleButton[] buttons = new AlcSubToggleButton[NAMES.length];
     private int brush = PENCIL;
@@ -285,6 +286,9 @@ public class BrushShapes extends AlcModule implements AlcConstants {
                 hatchCarry = hatchGap();
                 hatchTo(last, last);
                 break;
+            case FLOW:
+                startFlow(last);
+                break;
         }
         lastTime = e.getWhen();
         velocity = 0;
@@ -342,6 +346,9 @@ public class BrushShapes extends AlcModule implements AlcConstants {
             case HATCHING:
                 hatchTo(last, p);
                 break;
+            case FLOW:
+                flowTo(last, p);
+                break;
         }
         last = p;
         canvas.redraw();
@@ -354,6 +361,9 @@ public class BrushShapes extends AlcModule implements AlcConstants {
         }
         if (brush == INK && ink != null) {
             taperInkEnd();
+        }
+        if (brush == FLOW) {
+            finishFlow();
         }
         // A fast release flicks out into a long thin tail
         int tail = 5 + (int) Math.min(14, velocity * 4);
@@ -377,6 +387,102 @@ public class BrushShapes extends AlcModule implements AlcConstants {
             }
         }
         canvas.commitShapes();
+    }
+
+    //////////////////////////////////////////////////////////////
+    // FLOW - a swarm of particles leaving fine trails. Most drift on a smooth noise current,
+    // some are tied to the pen by a spring and swing around it in loops - precise rules
+    // and chance together, building a dark core with wisps around it like ink in water.
+    //////////////////////////////////////////////////////////////
+    private static class FlowParticle {
+
+        float x, y, vx, vy;
+        int age, life;
+        boolean tied;
+        AlcShape trail;
+    }
+    private final ArrayList<FlowParticle> flow = new ArrayList<FlowParticle>();
+    /** Moves through the noise slowly, so the current turns while drawing */
+    private float flowTime;
+    private static final int FLOW_MAX = 260;
+
+    private void startFlow(Point2D.Float p) {
+        flow.clear();
+        flowTime = random.nextFloat() * 50;
+        spawnFlow(p, 0, 0, 6);
+    }
+
+    /** New particles at the pen - more with a firmer press */
+    private void spawnFlow(Point2D.Float p, float penVx, float penVy, int count) {
+        float scale = Math.max(1F, size() / 6F);
+        for (int i = 0; i < count && flow.size() < FLOW_MAX; i++) {
+            FlowParticle f = new FlowParticle();
+            double a = random.nextDouble() * Math.PI * 2;
+            double speed = (0.4 + random.nextDouble() * 2.2) * scale;
+            f.x = p.x + (float) (random.nextGaussian() * scale);
+            f.y = p.y + (float) (random.nextGaussian() * scale);
+            // A little of the pen's movement - capped, so a fast flick does not fling them away
+            float push = Math.min(1F, 8F * scale / Math.max(1F, (float) Math.hypot(penVx, penVy)));
+            f.vx = penVx * 0.25F * push + (float) (Math.cos(a) * speed);
+            f.vy = penVy * 0.25F * push + (float) (Math.sin(a) * speed);
+            f.tied = random.nextDouble() < 0.3;
+            boolean core = random.nextDouble() < 0.18;
+            f.life = core ? 6 + random.nextInt(10) : (f.tied ? 50 : 30) + random.nextInt(60);
+            float width = (float) ((core ? 1.2 : 0.3) + random.nextDouble() * (core ? 1.4 : 0.8)) * scale;
+            double shade = core ? 0.35 + random.nextDouble() * 0.4 : 0.07 + random.nextDouble() * 0.3;
+            GeneralPath path = new GeneralPath();
+            path.moveTo(f.x, f.y);
+            f.trail = new AlcShape(path, canvas.getColor(), alpha(shade), STYLE_STROKE, width);
+            canvas.createShapes.add(f.trail);
+            flow.add(f);
+        }
+    }
+
+    /** One step of the swarm - the pen pulls the tied particles, the current carries all of them */
+    private void stepFlow(Point2D.Float pen) {
+        float scale = Math.max(1F, size() / 6F);
+        double noiseScale = 1.0 / (70 + size() * 5);
+        for (int i = flow.size() - 1; i >= 0; i--) {
+            FlowParticle f = flow.get(i);
+            double turn = AlcNoise.noise(AlcNoise.PERLIN, f.x * noiseScale, f.y * noiseScale, flowTime) * Math.PI * 4;
+            float ax = (float) Math.cos(turn) * 0.42F * scale, ay = (float) Math.sin(turn) * 0.42F * scale;
+            // Once the pen has gone they slow down quickly - no trail shoots off in a straight line
+            float damping = (pen == null) ? 0.86F : 0.93F;
+            if (f.tied && pen != null) {
+                ax += (pen.x - f.x) * 0.014F;
+                ay += (pen.y - f.y) * 0.014F;
+                damping = 0.965F;
+            }
+            f.vx = f.vx * damping + ax;
+            f.vy = f.vy * damping + ay;
+            float speed = (float) Math.hypot(f.vx, f.vy), limit = 5F * scale;
+            if (speed > limit) {
+                f.vx *= limit / speed;
+                f.vy *= limit / speed;
+            }
+            f.x += f.vx;
+            f.y += f.vy;
+            f.trail.getPath().lineTo(f.x, f.y);
+            if (++f.age >= f.life) {
+                flow.remove(i);
+            }
+        }
+        flowTime += 0.006F;
+    }
+
+    private void flowTo(Point2D.Float from, Point2D.Float to) {
+        float dx = to.x - from.x, dy = to.y - from.y;
+        int count = Math.round((1 + 5 * pressure()) * Math.min(3F, (float) Math.hypot(dx, dy) / 6F + 0.5F));
+        spawnFlow(to, dx, dy, count);
+        stepFlow(to);
+    }
+
+    /** Let go - the particles drift on until their trails are finished */
+    private void finishFlow() {
+        for (int step = 0; step < 40 && !flow.isEmpty(); step++) {
+            stepFlow(null);
+        }
+        flow.clear();
     }
 
     //////////////////////////////////////////////////////////////
