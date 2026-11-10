@@ -21,7 +21,7 @@ displaced by noise, repeated, shaped by the pressure and speed of your hand - an
 the way you look into clouds, and find the dragon, the robot or the character hiding there.
 It is a tool for the very first stage of an idea, before you know what it will become.
 
-![Pen pressure - size, opacity and both](docs/screenshots/pressure-size-opacity.png)
+![Pen pressure - size and opacity at different strengths](docs/screenshots/pressure-strength.png)
 
 ## Download
 
@@ -47,7 +47,7 @@ Java comes inside - there is nothing else to install.
 | | |
 |---|---|
 | ![Lasso and mirror](docs/screenshots/lasso-mirror.png) | ![Shortcuts overview](docs/screenshots/shortcuts.png) |
-| ![Pressure strength](docs/screenshots/pressure-strength.png) | ![Brushes](docs/screenshots/brushes.png) |
+| ![About](docs/screenshots/about.png) | ![Brushes](docs/screenshots/brushes.png) |
 
 ## Building from source
 
