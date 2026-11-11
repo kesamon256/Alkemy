@@ -44,6 +44,8 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
     int style;
     /** The Gradient of this shape (if available) */
     private GradientPaint gradientPaint;
+    /** Goes up with every change of the path - lets a drawing cache tell a changed shape from an unchanged one */
+    int version;
     /** Line Weight if the style is line */
     float lineWidth;
     /** Line pattern of the outline - solid, dashed or dotted */
@@ -212,6 +214,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param p Point to curve to
      */
     public void curveTo(Point p) {
+        version++;
         curveTo(new Point2D.Float(p.x, p.y));
     }
 
@@ -221,6 +224,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param p Point to curve to
      */
     public void curveTo(Point2D.Float p) {
+        version++;
         if (lineSmoothing) {
 
             // Filter out repeats
@@ -265,6 +269,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param p Point to draw a line to
      */
     public void lineTo(Point p) {
+        version++;
         lineTo(new Point2D.Float(p.x, p.y));
     }
 
@@ -273,6 +278,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param p Point to draw a line to
      */
     public void lineTo(Point2D.Float p) {
+        version++;
         // Filter out repeats
         if (!p.equals(lastPoint)) {
             // At the start just draw lines so smaller marks can be made
@@ -301,6 +307,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param width The width of the line
      */
     public void spineTo(Point2D.Float p, float width) {
+        version++;
         this.penShape = true;
         if (spine == null) {
             spine = new ArrayList<Point2D.Float>(1000);
@@ -332,6 +339,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
 
     /** Create the spine - redraws the variable width line based on the spine points */
     public void createSpine() {
+        version++;
         if (spine.size() > 0) {
             // Reset the shape and create the first point
             setPoint(spine.get(0));
@@ -363,6 +371,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param connect   Connect the two paths together or not
      */
     public void append(GeneralPath newPath, boolean connect) {
+        version++;
         this.path.append(newPath, connect);
     }
 
@@ -383,6 +392,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param p Point to draw a line to
      */
     public void moveTo(Point p) {
+        version++;
         path.moveTo(p.x, p.y);
     }
 
@@ -390,6 +400,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param p Point to draw a line to
      */
     public void moveTo(Point2D.Float p) {
+        version++;
         path.moveTo(p.x, p.y);
     }
 
@@ -397,6 +408,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      *  Closes the current subpath by drawing a straight line back to the coordinates of the last moveTo
      */
     public void closePath() {
+        version++;
         path.closePath();
         pathClosed = true;
     }
@@ -410,6 +422,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param y     y distance
      */
     public void move(double x, double y) {
+        version++;
         AffineTransform move = AffineTransform.getTranslateInstance(x, y);
         GeneralPath transformedPath = (GeneralPath) path.createTransformedShape(move);
         this.path = transformedPath;
@@ -421,6 +434,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param sy    Y scale factor
      */
     public void scale(double sx, double sy) {
+        version++;
         AffineTransform scale = AffineTransform.getScaleInstance(sx, sy);
         GeneralPath transformedPath = (GeneralPath) path.createTransformedShape(scale);
         this.path = transformedPath;
@@ -431,6 +445,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param theta     The angle of rotation in radians
      */
     public void rotate(double theta) {
+        version++;
         Rectangle bounds = this.path.getBounds();
         int x = bounds.x + bounds.width / 2;
         int y = bounds.y + bounds.height / 2;
@@ -444,6 +459,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param y         The coordinates of the y anchor point
      */
     public void rotate(double theta, double x, double y) {
+        version++;
         AffineTransform rotate = AffineTransform.getRotateInstance(theta, x, y);
         GeneralPath transformedPath = (GeneralPath) path.createTransformedShape(rotate);
         this.path = transformedPath;
@@ -465,6 +481,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param path
      */
     public void setPath(GeneralPath path) {
+        version++;
         this.path = path;
     }
 
@@ -473,6 +490,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param p
      */
     public void setPoint(Point p) {
+        version++;
         setPoint(new Point2D.Float(p.x, p.y));
     }
 
@@ -481,6 +499,7 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
      * @param p
      */
     public void setPoint(Point2D.Float p) {
+        version++;
         path = new GeneralPath(GeneralPath.WIND_NON_ZERO, 1000);
         path.moveTo(p.x, p.y);
         totalPoints = 1;

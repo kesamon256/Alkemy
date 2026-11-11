@@ -142,19 +142,161 @@ final class AlcSkia {
         });
     }
 
-    /** Draw the shapes being made right now into a see-through picture laid over the canvas */
-    static BufferedImage drawLive(int width, int height, AffineTransform transform, final List[] lists, boolean smoothing) {
-        return draw(liveTarget, width, height, transform, smoothing, new Drawing() {
-            @SuppressWarnings("unchecked")
-            public void draw(Canvas canvas, Paint paint) {
-                for (List list : lists) {
-                    drawShapes(canvas, paint, (List<AlcShape>) list);
-                }
-            }
-        });
+    /** How a live shape looked - if it looks the same next time, it is finished and can be kept as a picture */
+    private static final class Key {
+        AlcShape shape;
+        GeneralPath path;
+        int version, style, rgb, alpha;
+        float width;
+        Object gradient;
+        double x, y, w, h, cx, cy;
+
+        Key(AlcShape s) {
+            shape = s;
+            path = s.path;
+            version = s.version;
+            style = s.getStyle();
+            rgb = s.getColor().getRGB();
+            alpha = s.getAlpha();
+            width = s.getLineWidth();
+            gradient = s.getGradientPaint();
+            java.awt.geom.Rectangle2D b = path.getBounds2D();
+            x = b.getX();
+            y = b.getY();
+            w = b.getWidth();
+            h = b.getHeight();
+            java.awt.geom.Point2D c = path.getCurrentPoint();
+            cx = (c == null) ? Double.NaN : c.getX();
+            cy = (c == null) ? Double.NaN : c.getY();
+        }
+
+        boolean same(Key k) {
+            return k != null && k.shape == shape && k.path == path && k.version == version && k.style == style && k.rgb == rgb
+                    && k.alpha == alpha && k.width == width && k.gradient == gradient && k.x == x && k.y == y && k.w == w
+                    && k.h == h && Double.compare(k.cx, cx) == 0 && Double.compare(k.cy, cy) == 0;
+        }
     }
 
-    private static synchronized BufferedImage draw(Target target, int width, int height, AffineTransform transform, boolean smoothing, Drawing drawing) {
+    /** The finished start of the stroke being drawn, kept on the card - only its growing end is drawn again */
+    private static Surface liveBase;
+    private static final java.util.ArrayList<Key> baseKeys = new java.util.ArrayList<Key>();
+    private static AffineTransform baseTransform;
+    private static boolean baseSmoothing;
+    private static Key[] lastKeys = new Key[0];
+    private static int lastStable = 0;
+    /** The part of the live picture with something in it, in its pixels - only that is copied back and laid over */
+    static final java.awt.Rectangle liveRegion = new java.awt.Rectangle();
+    /** How much of the stroke was drawn from the kept picture last time - for the tests */
+    static int liveKept;
+    /** How many times a kept shape changed after all and the picture was started again - for the tests */
+    static int liveRestarts;
+
+    /** Draw the shapes being made right now into a see-through picture laid over the canvas */
+    static BufferedImage drawLive(int width, int height, final AffineTransform transform, final List[] lists, final boolean smoothing) {
+        // All the live shapes in drawing order, and how each looks now
+        final java.util.ArrayList<AlcShape> all = new java.util.ArrayList<AlcShape>();
+        for (List list : lists) {
+            for (Object o : list) {
+                all.add((AlcShape) o);
+            }
+        }
+        final Key[] keys = new Key[all.size()];
+        java.awt.geom.Rectangle2D area = null;
+        double edge = 0;
+        for (int i = 0; i < keys.length; i++) {
+            keys[i] = new Key(all.get(i));
+            java.awt.geom.Rectangle2D.Double b = new java.awt.geom.Rectangle2D.Double(keys[i].x, keys[i].y, keys[i].w, keys[i].h);
+            area = (area == null) ? b : area.createUnion(b);
+            if (all.get(i).isStroked()) {
+                edge = Math.max(edge, all.get(i).getLineWidth());
+            }
+        }
+        // Where on the picture the shapes are - a line is wider than its path by half its width
+        java.awt.Rectangle region = new java.awt.Rectangle();
+        if (area != null) {
+            area.setRect(area.getX() - edge, area.getY() - edge, area.getWidth() + edge * 2, area.getHeight() + edge * 2);
+            region = transform.createTransformedShape(area).getBounds();
+            region.grow(2, 2);
+            region = region.intersection(new java.awt.Rectangle(0, 0, width, height));
+        }
+        final java.awt.Rectangle readRegion = region.isEmpty() ? new java.awt.Rectangle() : region;
+        BufferedImage image = draw(liveTarget, width, height, transform, smoothing, new Drawing() {
+            public void draw(Canvas canvas, Paint paint) {
+                updateBase(paint, all, keys, transform, smoothing);
+                // The kept start laid in pixel for pixel, then the rest of the stroke over it
+                if (baseKeys.size() > 0) {
+                    canvas.save();
+                    canvas.resetMatrix();
+                    try (io.github.humbleui.skija.Image kept = liveBase.makeImageSnapshot()) {
+                        canvas.drawImage(kept, 0, 0);
+                    }
+                    canvas.restore();
+                }
+                drawShapes(canvas, paint, all, baseKeys.size(), all.size());
+            }
+        }, readRegion);
+        if (image != null) {
+            liveRegion.setBounds(readRegion);
+        }
+        return image;
+    }
+
+    /** Start the kept picture again - the next live picture is drawn in full */
+    static synchronized void forgetLive() {
+        baseKeys.clear();
+        baseTransform = null;
+        lastKeys = new Key[0];
+        lastStable = 0;
+    }
+
+    /** Add the shapes that stopped changing to the kept picture - or start it again if one of its shapes changed */
+    private static void updateBase(Paint paint, List<AlcShape> all, Key[] keys, AffineTransform transform, boolean smoothing) {
+        int width = liveTarget.width, height = liveTarget.height;
+        if (liveBase == null || liveBase.getWidth() != width || liveBase.getHeight() != height) {
+            if (liveBase != null) {
+                liveBase.close();
+            }
+            liveBase = Surface.makeRenderTarget(context, false, new ImageInfo(width, height, ColorType.BGRA_8888, ColorAlphaType.PREMUL));
+            baseKeys.clear();
+        }
+        boolean valid = transform.equals(baseTransform) && smoothing == baseSmoothing && baseKeys.size() <= keys.length;
+        for (int i = 0; valid && i < baseKeys.size(); i++) {
+            valid = baseKeys.get(i).same(keys[i]);
+        }
+        if (!valid) {
+            if (baseKeys.size() > 0) {
+                liveRestarts++;
+            }
+            liveBase.getCanvas().clear(0);
+            baseKeys.clear();
+            baseTransform = new AffineTransform(transform);
+            baseSmoothing = smoothing;
+        }
+        // Shapes that looked the same the last two times are taken as finished
+        int stable = 0;
+        while (stable < keys.length && stable < lastKeys.length && keys[stable].same(lastKeys[stable])) {
+            stable++;
+        }
+        int finished = Math.min(stable, lastStable);
+        lastKeys = keys;
+        lastStable = stable;
+        if (finished > baseKeys.size()) {
+            Canvas base = liveBase.getCanvas();
+            base.setMatrix(matrix(transform));
+            drawShapes(base, paint, all, baseKeys.size(), finished);
+            for (int i = baseKeys.size(); i < finished; i++) {
+                baseKeys.add(keys[i]);
+            }
+        }
+        liveKept = baseKeys.size();
+    }
+
+    private static BufferedImage draw(Target target, int width, int height, AffineTransform transform, boolean smoothing, Drawing drawing) {
+        return draw(target, width, height, transform, smoothing, drawing, null);
+    }
+
+    private static synchronized BufferedImage draw(Target target, int width, int height, AffineTransform transform, boolean smoothing, Drawing drawing,
+            java.awt.Rectangle region) {
         if (!ready(width, height)) {
             return null;
         }
@@ -189,9 +331,24 @@ final class AlcSkia {
             long t1 = System.nanoTime();
             context.flushAndSubmit(target.surface, true);
             long t2 = System.nanoTime();
-            target.surface.readPixels(target.pixmap, 0, 0);
-            target.pixels.rewind();
-            target.pixels.asIntBuffer().get(((DataBufferInt) out.getRaster().getDataBuffer()).getData());
+            int[] data = ((DataBufferInt) out.getRaster().getDataBuffer()).getData();
+            if (region == null) {
+                target.surface.readPixels(target.pixmap, 0, 0);
+                target.pixels.rewind();
+                target.pixels.asIntBuffer().get(data);
+            } else if (!region.isEmpty()) {
+                // Only the part with something in it - straight into its place in the picture
+                int offset = (region.y * width + region.x) * 4;
+                ByteBuffer part = target.pixels.duplicate().position(offset).slice().order(ByteOrder.LITTLE_ENDIAN);
+                try (Pixmap partMap = Pixmap.make(new ImageInfo(region.width, region.height, ColorType.BGRA_8888, ColorAlphaType.PREMUL), part, width * 4)) {
+                    target.surface.readPixels(partMap, region.x, region.y);
+                }
+                java.nio.IntBuffer ints = target.pixels.duplicate().order(ByteOrder.LITTLE_ENDIAN).asIntBuffer();
+                for (int row = region.y; row < region.y + region.height; row++) {
+                    ints.position(row * width + region.x);
+                    ints.get(data, row * width + region.x, region.width);
+                }
+            }
             if (TIMING) {
                 System.out.println(String.format("gpu %s: record %d ms, draw %d ms, read back %d ms",
                         target == liveTarget ? "live" : "layers", (t1 - t0) / 1000000, (t2 - t1) / 1000000, (System.nanoTime() - t2) / 1000000));
@@ -215,10 +372,14 @@ final class AlcSkia {
     }
 
     private static void drawShapes(Canvas canvas, Paint paint, List<AlcShape> list) {
-        for (int i = 0; i < list.size(); i++) {
+        drawShapes(canvas, paint, list, 0, list.size());
+    }
+
+    private static void drawShapes(Canvas canvas, Paint paint, List<AlcShape> list, int from, int to) {
+        for (int i = from; i < to; i++) {
             AlcShape shape = list.get(i);
             {
-                Path path = path(shape.path);
+                Path path = path(shape.path, shape.version);
                 // Solid under the outline when both are drawn
                 if (shape.isFilled()) {
                     setPaint(paint, shape.getFillPaint());
@@ -271,7 +432,7 @@ final class AlcSkia {
     /** A Skia path made from a Java2D path, and how that path looked when it was made */
     private static final class Cached {
         Path path;
-        int rule;
+        int rule, version;
         java.awt.geom.Point2D current;
         java.awt.geom.Rectangle2D bounds;
     }
@@ -280,12 +441,12 @@ final class AlcSkia {
     private static final java.util.WeakHashMap<GeneralPath, Cached> paths = new java.util.WeakHashMap<GeneralPath, Cached>();
 
     /** The Skia path for a Java2D path - made again only if the path has changed */
-    private static Path path(GeneralPath awt) {
+    private static Path path(GeneralPath awt, int version) {
         Cached c = paths.get(awt);
         java.awt.geom.Point2D current = awt.getCurrentPoint();
         java.awt.geom.Rectangle2D bounds = awt.getBounds2D();
         int rule = awt.getWindingRule();
-        if (c != null && c.rule == rule && java.util.Objects.equals(c.current, current) && c.bounds.equals(bounds)) {
+        if (c != null && c.version == version && c.rule == rule && java.util.Objects.equals(c.current, current) && c.bounds.equals(bounds)) {
             return c.path;
         }
         if (c == null) {
@@ -295,6 +456,7 @@ final class AlcSkia {
             c.path.close();
         }
         c.path = convert(awt);
+        c.version = version;
         c.rule = rule;
         c.current = current;
         c.bounds = bounds;

@@ -483,15 +483,23 @@ public class AlcCanvas extends JPanel implements AlcConstants, MouseListener, Mo
             // On the graphics card the stroke is drawn as one piece at full resolution and laid over
             // the canvas - faded as a whole on a faded layer, like the layer once the stroke is finished
             BufferedImage gpuLive = null;
+            int liveW = 1, liveH = 1;
             if (AlcSkia.enabled && hasLiveShapes()) {
                 double device = Math.abs(screen.getScaleX());
                 AffineTransform t = AffineTransform.getScaleInstance(device, device);
                 t.concatenate(getViewTransform());
-                gpuLive = AlcSkia.drawLive(Math.max(1, (int) Math.ceil(w * device)), Math.max(1, (int) Math.ceil(h * device)), t, activeShapeList, smoothing);
+                liveW = Math.max(1, (int) Math.ceil(w * device));
+                liveH = Math.max(1, (int) Math.ceil(h * device));
+                gpuLive = AlcSkia.drawLive(liveW, liveH, t, activeShapeList, smoothing);
             }
             if (gpuLive != null) {
-                g2.setTransform(screen);
-                g2.drawImage(gpuLive, 0, 0, w, h, null);
+                // Only the part of the picture the stroke is in
+                java.awt.Rectangle r = AlcSkia.liveRegion;
+                if (!r.isEmpty()) {
+                    g2.setTransform(screen);
+                    g2.scale(w / (double) liveW, h / (double) liveH);
+                    g2.drawImage(gpuLive, r.x, r.y, r.x + r.width, r.y + r.height, r.x, r.y, r.x + r.width, r.y + r.height, null);
+                }
             } else if ((penDown && liveScale < 1) || layerOpacity < 1F) {
                 // On a faded layer the stroke is drawn as one piece first and then faded as a whole,
                 // the same way the layer is drawn once the stroke is finished
