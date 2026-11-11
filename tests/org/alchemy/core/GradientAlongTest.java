@@ -240,6 +240,36 @@ public class GradientAlongTest {
                         bend.getRed() > 60 && bend.getBlue() > 60 && Math.abs(bend.getRed() - bend.getBlue()) < 120);
             }
         }
+        // With Mirror: the mirror image shades the same way, start and end at the mirrored places
+        for (final int brush : new int[]{-1, 1}) {
+            final BufferedImage[] img = new BufferedImage[1];
+            final int[] axis = new int[1];
+            SwingUtilities.invokeAndWait(new Runnable() {
+                public void run() {
+                    try {
+                        MarkerDisplaceTest.click("affectButton", "Mirror");
+                        Field ax = AlcCanvas.class.getDeclaredField("axisX");
+                        ax.setAccessible(true);
+                        axis[0] = (int) Math.round(ax.getDouble(Alchemy.canvas));
+                        setup(brush < 0 ? "Shapes" : "Brushes", brush, AlcCanvas.STYLE_MODE_STROKE, 12F);
+                        uStroke();
+                        img[0] = render();
+                        SketchTest.shot("gradient-mirror" + brush);
+                        MarkerDisplaceTest.click("affectButton", "Mirror");
+                    } catch (Throwable e) {
+                        e.printStackTrace();
+                        UndoSmokeTest.failures++;
+                    }
+                }
+            });
+            String name = (brush < 0 ? "Shapes" : "Ink") + " mirrored";
+            Color start = around(img[0], 2 * axis[0] - 175, 250), end = around(img[0], 2 * axis[0] - 190, 410);
+            Color bend = around(img[0], 2 * axis[0] - 710, 330);
+            UndoSmokeTest.check(name + ": starts red (" + rgb(start) + ")", start.getRed() > start.getBlue() + 60);
+            UndoSmokeTest.check(name + ": ends blue (" + rgb(end) + ")", end.getBlue() > end.getRed() + 60);
+            UndoSmokeTest.check(name + ": in between round the bend (" + rgb(bend) + ")",
+                    bend.getRed() > 60 && bend.getBlue() > 60 && Math.abs(bend.getRed() - bend.getBlue()) < 120);
+        }
         // Fading out instead
         SwingUtilities.invokeAndWait(new Runnable() {
             public void run() {

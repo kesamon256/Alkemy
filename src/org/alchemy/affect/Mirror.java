@@ -436,6 +436,8 @@ public class Mirror extends AlcModule implements AlcConstants {
     private void cloneAttributes(AlcShape shape, AlcShape cloneShape) {
 //        cloneShape.setAlpha(shape.getAlpha());
         cloneShape.setStyle(shape.getStyle());
+        // A gradient along the stroke changes as the stroke grows - the mirror image follows it
+        cloneShape.setAlongGradient(shape.getAlongColor(), shape.getAlongFrom(), shape.getAlongTo());
 //        cloneShape.setLineWidth(shape.getLineWidth());
 //        cloneShape.setColor(shape.getColor());
     }
