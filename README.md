@@ -76,7 +76,7 @@ powershell -ExecutionPolicy Bypass -File test.ps1 LayerTest   # just some
 | `src/org/alchemy/core` | The app - window, canvas, tool bar, dock, pen input, undo, layers, export |
 | `src/org/alchemy/create`, `src/org/alchemy/affect` | The drawing tools (Create) and the effects (Affect), loaded as plugins |
 | `modules` | Plugin descriptions of the tools and effects |
-| `lib` | Libraries (FlatLaf, JPen, JPF, iText, Batik, PDFRenderer...) |
+| `lib` | Libraries (FlatLaf, JPen, JPF, iText, Batik, PDFRenderer, Skija + LWJGL for drawing on the GPU...) |
 | `shapes` | Shape libraries used by Pull Shapes |
 | `tests` | Regression tests |
 

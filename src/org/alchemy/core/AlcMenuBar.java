@@ -908,6 +908,20 @@ class AlcMenuBar extends JMenuBar implements AlcConstants {
         smoothingItem.setup(getS("smoothingTitle"));
         settingsMenu.add(smoothingItem);
 
+        // Drawing on the graphics card - off draws everything with the processor as before
+        final JCheckBoxMenuItem gpuItem = new JCheckBoxMenuItem(getS("gpuTitle"), AlcSkia.enabled);
+        gpuItem.setFont(FONT_MEDIUM);
+        gpuItem.setToolTipText(getS("gpuDescription") + " (" + AlcSkia.status + ")");
+        gpuItem.addActionListener(new ActionListener() {
+
+            public void actionPerformed(ActionEvent e) {
+                AlcSkia.setEnabled(gpuItem.isSelected());
+                Alchemy.canvas.redraw(true);
+                gpuItem.setToolTipText(getS("gpuDescription") + " (" + AlcSkia.status + ")");
+            }
+        });
+        settingsMenu.add(gpuItem);
+
         // Line Smoothing
         AbstractAction lineSmoothingAction = new AbstractAction() {
 

@@ -480,9 +480,21 @@ public class AlcCanvas extends JPanel implements AlcConstants, MouseListener, Mo
             // A stroke too heavy to draw in time is worked out at a lower resolution until the pen
             // lifts - it is drawn at full quality into the picture when it is finished, so the result is the same
             long liveStart = System.nanoTime();
-            // On a faded layer the stroke is drawn as one piece first and then faded as a whole,
-            // the same way the layer is drawn once the stroke is finished
-            if ((penDown && liveScale < 1) || layerOpacity < 1F) {
+            // On the graphics card the stroke is drawn as one piece at full resolution and laid over
+            // the canvas - faded as a whole on a faded layer, like the layer once the stroke is finished
+            BufferedImage gpuLive = null;
+            if (AlcSkia.enabled && hasLiveShapes()) {
+                double device = Math.abs(screen.getScaleX());
+                AffineTransform t = AffineTransform.getScaleInstance(device, device);
+                t.concatenate(getViewTransform());
+                gpuLive = AlcSkia.drawLive(Math.max(1, (int) Math.ceil(w * device)), Math.max(1, (int) Math.ceil(h * device)), t, activeShapeList, smoothing);
+            }
+            if (gpuLive != null) {
+                g2.setTransform(screen);
+                g2.drawImage(gpuLive, 0, 0, w, h, null);
+            } else if ((penDown && liveScale < 1) || layerOpacity < 1F) {
+                // On a faded layer the stroke is drawn as one piece first and then faded as a whole,
+                // the same way the layer is drawn once the stroke is finished
                 double device = Math.abs(screen.getScaleX());
                 double factor = device * (penDown ? Math.min(1, liveScale) : 1);
                 int iw = Math.max(1, (int) Math.ceil(w * factor)), ih = Math.max(1, (int) Math.ceil(h * factor));
@@ -3648,6 +3660,16 @@ public class AlcCanvas extends JPanel implements AlcConstants, MouseListener, Mo
         }
     }
 
+    /** Is anything being drawn right now */
+    private boolean hasLiveShapes() {
+        for (int j = 0; j < activeShapeList.length; j++) {
+            if (!activeShapeList[j].isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Draw the shapes being made - the create, affect and guide lists */
     private void drawLiveShapes(Graphics2D g2) {
         for (int j = 0; j < activeShapeList.length; j++) {
@@ -3827,7 +3849,18 @@ public class AlcCanvas extends JPanel implements AlcConstants, MouseListener, Mo
 
             // Draw the visible layers bottom up - the shapes being drawn belong to the active layer
             Composite oldComposite = g2.getComposite();
-            for (int l = 0; l < Alchemy.canvas.layers.size(); l++) {
+            // Drawn on the graphics card when it can - into a picture laid over what is drawn so far
+            BufferedImage gpu = (cb == null && targetWidth > 0 && targetHeight > 0)
+                    ? AlcSkia.drawLayers(targetWidth, targetHeight, g2.getTransform(), Alchemy.canvas.layers, Alchemy.canvas.activeLayer,
+                            Alchemy.canvas.createShapes, Alchemy.canvas.affectShapes, Alchemy.canvas.smoothing)
+                    : null;
+            if (gpu != null) {
+                AffineTransform userTransform = g2.getTransform();
+                g2.setTransform(new AffineTransform());
+                g2.drawImage(gpu, 0, 0, null);
+                g2.setTransform(userTransform);
+            }
+            for (int l = 0; gpu == null && l < Alchemy.canvas.layers.size(); l++) {
                 AlcLayer layer = Alchemy.canvas.layers.get(l);
                 if (!layer.visible) {
                     continue;
