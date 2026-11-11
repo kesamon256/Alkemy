@@ -38,8 +38,8 @@ class AlcSketchIO {
 
     static final String EXTENSION = "alchemy";
     private static final String MAGIC = "ALCHEMY-SKETCH";
-    /** 1 - one list of shapes, 2 - layers */
-    private static final int VERSION = 2;
+    /** 1 - one list of shapes, 2 - layers, 3 - gradients along the stroke */
+    private static final int VERSION = 3;
 
     /** Save the layers and committed shapes of the canvas */
     static void save(File file, AlcCanvas canvas) throws IOException {
@@ -78,6 +78,12 @@ class AlcSketchIO {
                 writePoint(out, gp.getPoint2());
                 out.writeInt(gp.getColor2().getRGB());
             }
+            out.writeBoolean(shape.alongColor != null);
+            if (shape.alongColor != null) {
+                out.writeInt(shape.alongColor.getRGB());
+                out.writeFloat(shape.alongFrom);
+                out.writeFloat(shape.alongTo);
+            }
             writePath(out, shape.path);
         }
     }
@@ -98,7 +104,7 @@ class AlcSketchIO {
             sketch.layers = new ArrayList<AlcLayer>();
             if (version == 1) {
                 // Sketches from before layers become one layer
-                sketch.layers.add(new AlcLayer(Alchemy.bundle.getString("layerName") + " 1", readShapes(in)));
+                sketch.layers.add(new AlcLayer(Alchemy.bundle.getString("layerName") + " 1", readShapes(in, version)));
                 sketch.activeLayer = 0;
             } else {
                 int count = in.readInt();
@@ -108,7 +114,7 @@ class AlcSketchIO {
                     boolean visible = in.readBoolean();
                     boolean locked = in.readBoolean();
                     float opacity = in.readFloat();
-                    AlcLayer layer = new AlcLayer(name, readShapes(in));
+                    AlcLayer layer = new AlcLayer(name, readShapes(in, version));
                     layer.visible = visible;
                     layer.locked = locked;
                     layer.opacity = opacity;
@@ -121,7 +127,7 @@ class AlcSketchIO {
         }
     }
 
-    private static ArrayList<AlcShape> readShapes(DataInputStream in) throws IOException {
+    private static ArrayList<AlcShape> readShapes(DataInputStream in, int version) throws IOException {
         int count = in.readInt();
         ArrayList<AlcShape> shapes = new ArrayList<AlcShape>(count);
         for (int i = 0; i < count; i++) {
@@ -138,6 +144,13 @@ class AlcSketchIO {
                 Color c2 = new Color(in.readInt(), true);
                 gp = new GradientPaint(p1, c1, p2, c2);
             }
+            Color along = null;
+            float alongFrom = 0F, alongTo = 1F;
+            if (version >= 3 && in.readBoolean()) {
+                along = new Color(in.readInt(), true);
+                alongFrom = in.readFloat();
+                alongTo = in.readFloat();
+            }
             int winding = in.readByte();
             GeneralPath path = readPath(in);
             AlcShape shape = new AlcShape(path, color, alpha, style, lineWidth);
@@ -146,6 +159,7 @@ class AlcSketchIO {
             shape.setAlphaColor(color);
             shape.setGradientPaint(gp);
             shape.setDash(styleBits >> 8);
+            shape.setAlongGradient(along, alongFrom, alongTo);
             shapes.add(shape);
         }
         return shapes;

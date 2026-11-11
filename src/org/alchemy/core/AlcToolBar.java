@@ -797,12 +797,21 @@ public class AlcToolBar extends AlcAbstractToolBar implements AlcConstants{
                 1);
 
         lineWidthSpinner.setToolTip(getS("lineWeightDescription"));
+        // Below 1 in tenths - hair thin lines, for fine detail when zoomed in
+        float[] widths = new float[9 + lineWidthSpinnerMax];
+        for (int i = 0; i < 9; i++) {
+            widths[i] = (i + 1) / 10F;
+        }
+        for (int i = 1; i <= lineWidthSpinnerMax; i++) {
+            widths[8 + i] = i;
+        }
+        lineWidthSpinner.setLadder(widths, Alchemy.canvas.getLineWidth());
 
         lineWidthSpinner.addChangeListener(
                 new ChangeListener() {
 
                     public void stateChanged(ChangeEvent e) {
-                        Alchemy.canvas.setLineWidth(lineWidthSpinner.getValue());
+                        Alchemy.canvas.setLineWidth(lineWidthSpinner.getNumber());
                     }
                 });
 
@@ -810,7 +819,7 @@ public class AlcToolBar extends AlcAbstractToolBar implements AlcConstants{
 
             public void actionPerformed(ActionEvent e) {
                 lineWidthSpinner.setPreviousValue();
-                Alchemy.canvas.setLineWidth(lineWidthSpinner.getValue());
+                Alchemy.canvas.setLineWidth(lineWidthSpinner.getNumber());
             }
         };
 
@@ -818,7 +827,7 @@ public class AlcToolBar extends AlcAbstractToolBar implements AlcConstants{
 
             public void actionPerformed(ActionEvent e) {
                 lineWidthSpinner.setNextValue();
-                Alchemy.canvas.setLineWidth(lineWidthSpinner.getValue());
+                Alchemy.canvas.setLineWidth(lineWidthSpinner.getNumber());
             }
         };
 

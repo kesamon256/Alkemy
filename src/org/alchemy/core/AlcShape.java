@@ -44,6 +44,10 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
     int style;
     /** The Gradient of this shape (if available) */
     private GradientPaint gradientPaint;
+    /** The colour the shape turns into along its length - null when it has one colour (see AlcAlong) */
+    Color alongColor;
+    /** Where along the whole stroke this shape starts and ends, 0 to 1 - the colour at each end follows from it */
+    float alongFrom = 0F, alongTo = 1F;
     /** Goes up with every change of the path - lets a drawing cache tell a changed shape from an unchanged one */
     int version;
     /** Line Weight if the style is line */
@@ -894,8 +898,33 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
         return tempShape;
     }
 
+    /**
+     * Shade the shape from its own colour into another along its length, around every curve.
+     * @param end   The colour at the end of the stroke - with no opacity it fades out. Null for one colour.
+     * @param from  Where along the whole stroke this shape starts, 0 to 1
+     * @param to    Where along the whole stroke this shape ends, 0 to 1
+     */
+    public void setAlongGradient(Color end, float from, float to) {
+        this.alongColor = end;
+        this.alongFrom = from;
+        this.alongTo = to;
+    }
+
+    public Color getAlongColor() {
+        return alongColor;
+    }
+
+    public float getAlongFrom() {
+        return alongFrom;
+    }
+
+    public float getAlongTo() {
+        return alongTo;
+    }
+
     /** Clone other attributes of this shape */
     private void cloneAttributes(AlcShape tempShape) {
+        tempShape.setAlongGradient(this.alongColor, this.alongFrom, this.alongTo);
         tempShape.setAlpha(this.alpha);
         tempShape.setStyle(this.style);
         tempShape.setDash(this.dash);

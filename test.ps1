@@ -2,14 +2,15 @@
 # Builds first, then runs every test and prints a summary. Screenshots go to tests\shots.
 #   powershell -ExecutionPolicy Bypass -File test.ps1            # all tests
 #   powershell -ExecutionPolicy Bypass -File test.ps1 LayerTest  # some tests
+#   powershell -ExecutionPolicy Bypass -File test.ps1 -Dist dist\Alchemy-test   # while the app is open from dist\Alchemy
 # Note: the tests share the app's saved preferences and put them back when done.
 
-param([string[]]$Only)
+param([string[]]$Only, [string]$Dist = 'dist\Alchemy')
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
-& (Join-Path $root 'build.ps1')
-$dist = Join-Path $root 'dist\Alchemy'
+& (Join-Path $root 'build.ps1') -Dist $Dist
+$dist = Join-Path $root $Dist
 $classes = Join-Path $root 'build\test-classes'
 $shots = Join-Path $root 'tests\shots'
 New-Item -ItemType Directory -Force $classes, $shots | Out-Null

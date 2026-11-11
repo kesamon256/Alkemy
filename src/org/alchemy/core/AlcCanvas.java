@@ -3683,6 +3683,11 @@ public class AlcCanvas extends JPanel implements AlcConstants, MouseListener, Mo
         for (int j = 0; j < activeShapeList.length; j++) {
             for (int i = 0; i < activeShapeList[j].size(); i++) {
                 AlcShape currentShape = (AlcShape) activeShapeList[j].get(i);
+                // A gradient along the stroke
+                if (AlcAlong.has(currentShape)) {
+                    AlcAlong.draw(g2, currentShape);
+                    continue;
+                }
                 // SOLID - under the outline when both are drawn
                 if (currentShape.isFilled()) {
                     g2.setPaint(currentShape.getFillPaint());
@@ -3929,6 +3934,11 @@ public class AlcCanvas extends JPanel implements AlcConstants, MouseListener, Mo
             {
                 for (int i = 0; i < list.size(); i++) {
                     AlcShape currentShape = list.get(i);
+                    // A gradient along the stroke
+                    if (AlcAlong.has(currentShape)) {
+                        AlcAlong.draw(g2, currentShape);
+                        continue;
+                    }
                     Paint paint = currentShape.getPaint();
 
                     // SOLID - under the outline when both are drawn

@@ -148,7 +148,8 @@ final class AlcSkia {
         GeneralPath path;
         int version, style, rgb, alpha;
         float width;
-        Object gradient;
+        Object gradient, along;
+        float alongFrom, alongTo;
         double x, y, w, h, cx, cy;
 
         Key(AlcShape s) {
@@ -160,6 +161,9 @@ final class AlcSkia {
             alpha = s.getAlpha();
             width = s.getLineWidth();
             gradient = s.getGradientPaint();
+            along = s.alongColor;
+            alongFrom = s.alongFrom;
+            alongTo = s.alongTo;
             java.awt.geom.Rectangle2D b = path.getBounds2D();
             x = b.getX();
             y = b.getY();
@@ -172,7 +176,8 @@ final class AlcSkia {
 
         boolean same(Key k) {
             return k != null && k.shape == shape && k.path == path && k.version == version && k.style == style && k.rgb == rgb
-                    && k.alpha == alpha && k.width == width && k.gradient == gradient && k.x == x && k.y == y && k.w == w
+                    && k.alpha == alpha && k.width == width && k.gradient == gradient
+                    && java.util.Objects.equals(k.along, along) && k.alongFrom == alongFrom && k.alongTo == alongTo && k.x == x && k.y == y && k.w == w
                     && k.h == h && Double.compare(k.cx, cx) == 0 && Double.compare(k.cy, cy) == 0;
         }
     }
@@ -378,17 +383,40 @@ final class AlcSkia {
     private static void drawShapes(Canvas canvas, Paint paint, List<AlcShape> list, int from, int to) {
         for (int i = from; i < to; i++) {
             AlcShape shape = list.get(i);
+            Path path = path(shape.path, shape.version);
+            if (AlcAlong.has(shape)) {
+                // A gradient along the stroke - slice by slice, each only where it belongs
+                for (AlcAlong.Slice slice : AlcAlong.slices(shape)) {
+                    canvas.save();
+                    if (slice.clip != null) {
+                        if (slice.skia == null) {
+                            slice.skia = convert(slice.clip);
+                        }
+                        canvas.clipPath((Path) slice.skia, ClipMode.INTERSECT, false);
+                    }
+                    drawShape(canvas, paint, shape, path, AlcAlong.paint(slice, true, shape), AlcAlong.paint(slice, false, shape));
+                    canvas.restore();
+                }
+            } else {
+                drawShape(canvas, paint, shape, path, shape.getFillPaint(), shape.getPaint());
+            }
+            paint.setShader(null);
+        }
+    }
+
+    /** Draw one shape - the inside, then the outline - with the given paints */
+    private static void drawShape(Canvas canvas, Paint paint, AlcShape shape, Path path, java.awt.Paint fillPaint, java.awt.Paint linePaint) {
+        {
             {
-                Path path = path(shape.path, shape.version);
                 // Solid under the outline when both are drawn
                 if (shape.isFilled()) {
-                    setPaint(paint, shape.getFillPaint());
+                    setPaint(paint, fillPaint);
                     paint.setMode(PaintMode.FILL);
                     paint.setPathEffect(null);
                     canvas.drawPath(path, paint);
                 }
                 if (shape.isStroked()) {
-                    setPaint(paint, shape.getPaint());
+                    setPaint(paint, linePaint);
                     BasicStroke stroke = shape.getStroke();
                     paint.setMode(PaintMode.STROKE);
                     paint.setStrokeWidth(stroke.getLineWidth());
@@ -410,7 +438,6 @@ final class AlcSkia {
                     }
                 }
             }
-            paint.setShader(null);
         }
     }
 
@@ -467,8 +494,9 @@ final class AlcSkia {
     private static int[] verbs = new int[128];
 
     /** Convert in one go - the whole path handed over at once, not point by point */
-    private static Path convert(GeneralPath awt) {
+    private static Path convert(java.awt.Shape awt) {
         PathIterator it = awt.getPathIterator(null);
+        int rule = it.getWindingRule();
         float[] q = new float[6];
         int np = 0, nv = 0;
         float moveX = 0, moveY = 0;
@@ -517,7 +545,7 @@ final class AlcSkia {
             }
             it.next();
         }
-        int fill = (awt.getWindingRule() == PathIterator.WIND_EVEN_ODD ? PathFillMode.EVEN_ODD : PathFillMode.WINDING).ordinal();
+        int fill = (rule == PathIterator.WIND_EVEN_ODD ? PathFillMode.EVEN_ODD : PathFillMode.WINDING).ordinal();
         return new Path(Path._nMakeRaw(java.util.Arrays.copyOf(points, np), java.util.Arrays.copyOf(verbs, nv), new float[0], fill, false));
     }
 }

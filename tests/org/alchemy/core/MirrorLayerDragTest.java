@@ -149,7 +149,7 @@ public class MirrorLayerDragTest {
         Rectangle original = c.shapes.get(0).getBounds();
         Rectangle mirrored = c.shapes.get(1).getBounds();
         double left = moved - original.getMaxX(), right = mirrored.getMinX() - moved;
-        UndoSmokeTest.check(String.format("mirror copy is reflected around the axis (gaps %.0f / %.0f)", left, right), Math.abs(left - right) < 3 && right > 0);
+        UndoSmokeTest.check(String.format("mirror copy is reflected around the axis (gaps %.0f / %.0f, axis %.0f, %s, %s, width %.1f)", left, right, moved, original, mirrored, c.shapes.get(0).getLineWidth()), Math.abs(left - right) < 3 && right > 0);
         c.resetView();
     }
 }

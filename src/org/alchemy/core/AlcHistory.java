@@ -247,6 +247,8 @@ class AlcHistory {
         private final int dash;
         private final float lineWidth;
         private final GradientPaint gradient;
+        private final java.awt.Color along;
+        private final float alongFrom, alongTo;
 
         Entry(AlcShape shape) {
             this.shape = shape;
@@ -257,11 +259,15 @@ class AlcHistory {
             this.dash = shape.dash;
             this.lineWidth = shape.lineWidth;
             this.gradient = shape.getGradientPaint();
+            this.along = shape.alongColor;
+            this.alongFrom = shape.alongFrom;
+            this.alongTo = shape.alongTo;
         }
 
         boolean matches(AlcShape s) {
             return s == shape && s.path == path && s.color == color && s.alpha == alpha &&
-                    s.style == style && s.dash == dash && s.lineWidth == lineWidth && s.getGradientPaint() == gradient;
+                    s.style == style && s.dash == dash && s.lineWidth == lineWidth && s.getGradientPaint() == gradient &&
+                    s.alongColor == along && s.alongFrom == alongFrom && s.alongTo == alongTo;
         }
 
         AlcShape restore() {
@@ -272,6 +278,7 @@ class AlcHistory {
             shape.dash = dash;
             shape.lineWidth = lineWidth;
             shape.setGradientPaint(gradient);
+            shape.setAlongGradient(along, alongFrom, alongTo);
             return shape;
         }
     }

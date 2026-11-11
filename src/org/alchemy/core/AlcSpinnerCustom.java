@@ -31,6 +31,8 @@ public class AlcSpinnerCustom extends JComponent implements MouseListener, Mouse
 
     int value, dragY, dragValue;
     int min, max, step;
+    /** The numbers to step through when they are not whole numbers 1, 2, 3... - the value is then a place in this list */
+    float[] ladder;
     boolean mouseDown;
     private boolean upPressed = false;
     private boolean downPressed = false;
@@ -174,7 +176,7 @@ public class AlcSpinnerCustom extends JComponent implements MouseListener, Mouse
 
         g2.setColor(COLOR_UI_TEXT);
 
-        String valueString = Integer.toString(value);
+        String valueString = (ladder != null) ? format(ladder[value]) : Integer.toString(value);
 
         int stringWidth = metrics.stringWidth(valueString);
         // Centre the text in the middle of the text area
@@ -183,6 +185,45 @@ public class AlcSpinnerCustom extends JComponent implements MouseListener, Mouse
         g2.setFont(font);
         g2.drawString(valueString, stringX, stringY);
 
+    }
+
+    /** Step through these numbers instead of whole numbers - like 0.1 ... 0.9, 1, 2 ... 75 */
+    void setLadder(float[] ladder, float value) {
+        this.ladder = ladder;
+        this.step = 1;
+        this.min = 0;
+        this.max = ladder.length - 1;
+        this.value = nearest(value);
+        repaint();
+    }
+
+    /** The place in the ladder nearest to a number */
+    int nearest(float number) {
+        int best = 0;
+        for (int i = 1; i < ladder.length; i++) {
+            if (Math.abs(ladder[i] - number) < Math.abs(ladder[best] - number)) {
+                best = i;
+            }
+        }
+        return best;
+    }
+
+    /** The number shown - from the ladder when there is one */
+    float getNumber() {
+        return (ladder != null) ? ladder[value] : value;
+    }
+
+    void setNumber(float number) {
+        setValue((ladder != null) ? nearest(number) : Math.round(number));
+    }
+
+    /** 0.3 as .3 so it fits the box, whole numbers without a point */
+    static String format(float v) {
+        if (v == Math.round(v)) {
+            return Integer.toString(Math.round(v));
+        }
+        String s = Float.toString(Math.round(v * 100) / 100F);
+        return s.startsWith("0.") ? s.substring(1) : s;
     }
 
     boolean getValueIsAdjusting() {
@@ -319,7 +360,7 @@ public class AlcSpinnerCustom extends JComponent implements MouseListener, Mouse
 
         // SHOW THE NUMBER DIALOG
         if (showDialog) {
-            if (!Alchemy.preferences.simpleToolBar) {
+            if (!Alchemy.preferences.simpleToolBar && ladder == null) {
                 dialog.show(this.min, this.max);
             }
 
@@ -412,6 +453,23 @@ public class AlcSpinnerCustom extends JComponent implements MouseListener, Mouse
                 keyOffTimer.restart();
             }
             char c = e.getKeyChar();
+            if (ladder != null) {
+                // Numbers like 0.5 - typed with a point or a comma
+                if (Character.isDigit(c) || ((c == '.' || c == ',') && text.indexOf('.') < 0)) {
+                    String typed = text + (Character.isDigit(c) ? Character.toString(c) : ".");
+                    try {
+                        float number = Float.parseFloat(typed.startsWith(".") ? "0" + typed : typed);
+                        if (!typed.endsWith(".")) {
+                            setValue(nearest(number));
+                        }
+                        text = typed;
+                        repaintNumber();
+                    } catch (NumberFormatException ex) {
+                        // ignore
+                    }
+                }
+                return;
+            }
             // Check if this is a digit
             if (Character.isDigit(c)) {
                 try {

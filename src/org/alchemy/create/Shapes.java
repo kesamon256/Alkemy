@@ -134,10 +134,10 @@ public class Shapes extends AlcModule implements AlcConstants {
      *  to about one and a half times the line weight pressed hard */
     private float pressureWidth() {
         if (!canvas.isPressureSize()) {
-            return Math.max(0.5F, canvas.getLineWidth() / 2F);
+            return Math.max(0.05F, canvas.getLineWidth() / 2F);
         }
         float p = canvas.sizePressure(rawPressure());
-        return Math.max(0.3F, canvas.getLineWidth() * (0.1F + 1.3F * (float) Math.pow(p, 0.9)));
+        return Math.max(0.3F * Math.min(1F, canvas.getLineWidth()), canvas.getLineWidth() * (0.1F + 1.3F * (float) Math.pow(p, 0.9)));
     }
 
     /** The opacity for the pen pressure in tenths, so a stroke is made of a few pieces */

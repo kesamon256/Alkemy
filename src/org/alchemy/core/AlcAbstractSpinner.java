@@ -74,6 +74,20 @@ public abstract class AlcAbstractSpinner extends JPanel implements AlcShortcutIn
         return spinner.value;
     }
 
+    /** Step through these numbers instead of whole numbers - like 0.1 ... 0.9, 1, 2 ... 75 */
+    public void setLadder(float[] ladder, float value) {
+        spinner.setLadder(ladder, value);
+    }
+
+    /** The number shown - with a ladder it can be 0.5 */
+    public float getNumber() {
+        return spinner.getNumber();
+    }
+
+    public void setNumber(float number) {
+        spinner.setNumber(number);
+    }
+
     /** Sets the current value of the slider.
      * 
      * @param value The new value

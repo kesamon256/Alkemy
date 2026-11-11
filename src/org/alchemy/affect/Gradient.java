@@ -1,113 +1,247 @@
 /*
  * This file is part of the Alchemy project - http://al.chemy.org
- * 
+ *
  * Copyright (c) 2007-2010 Karl D.D. Willis
- * 
+ *
  * Alchemy is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * Alchemy is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with Alchemy.  If not, see <http://www.gnu.org/licenses/>.
  */
 package org.alchemy.affect;
 
 import java.awt.Color;
-import java.awt.GradientPaint;
-import java.awt.Rectangle;
-import java.awt.geom.GeneralPath;
-import java.awt.geom.PathIterator;
+import java.awt.Component;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.MouseEvent;
 import java.awt.geom.Point2D;
-import java.util.ArrayList;
+import java.awt.geom.Rectangle2D;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+import javax.swing.Icon;
 import org.alchemy.core.*;
 
 /**
- *
  * Gradient.java
+ * Every stroke starts in the current colour and turns into a second colour by its end,
+ * following the line around every curve. Brushes made of many shapes (Flow, charcoal, pencil)
+ * shade over the whole stroke too - each shape takes the colours of the moments it was drawn in.
  */
 public class Gradient extends AlcModule {
 
-//    private Color transparent;
+    private static final java.util.prefs.Preferences PREFS = java.util.prefs.Preferences.userNodeForPackage(Gradient.class);
+    /** The colour at the end of every stroke */
+    private Color end = new Color(PREFS.getInt("Gradient End Colour", new Color(230, 70, 60).getRGB()));
+    /** Fade out to nothing instead of turning into the end colour */
+    private boolean fadeOut = PREFS.getBoolean("Gradient Fade Out", false);
+    private AlcToolBarSubSection subToolBarSection;
+
+    /** How far the pen has gone in this stroke */
+    private float travelled;
+    private Point2D.Float lastPen;
+
+    /** When a shape of the stroke appeared and when it last changed - as distances the pen had gone */
+    private static final class Mark {
+        float from, to;
+        int version;
+        double x, y, w, h;
+    }
+    private final Map<AlcShape, Mark> marks = new IdentityHashMap<AlcShape, Mark>();
+
+    public Gradient() {
+    }
+
+    @Override
+    public void setup() {
+        createSubToolBarSection();
+        toolBar.addSubToolBarSection(subToolBarSection);
+    }
+
+    @Override
+    public void reselect() {
+        toolBar.addSubToolBarSection(subToolBarSection);
+    }
+
+    private void createSubToolBarSection() {
+        subToolBarSection = new AlcToolBarSubSection(this);
+
+        // The start colour - the current colour of the colour wheel
+        final AlcSubButton startButton = new AlcSubButton("Start");
+        startButton.setIcon(new Swatch(true));
+        startButton.setToolTipText("The colour every stroke starts with - the current colour");
+        startButton.setFocusable(false);
+        subToolBarSection.add(startButton);
+
+        // The end colour
+        final AlcSubButton endButton = new AlcSubButton("End");
+        endButton.setIcon(new Swatch(false));
+        endButton.setToolTipText("The colour every stroke turns into by its end - click to choose");
+        endButton.setFocusable(false);
+        endButton.addActionListener(new ActionListener() {
+
+            public void actionPerformed(ActionEvent e) {
+                colorSelector.show(new ActionListener() {
+
+                    public void actionPerformed(ActionEvent event) {
+                        setEnd(colorSelector.getColor());
+                        endButton.repaint();
+                    }
+                }, null, end);
+            }
+        });
+        subToolBarSection.add(endButton);
+
+        // Swap the two colours
+        final AlcSubButton swapButton = new AlcSubButton("Swap");
+        swapButton.setToolTipText("Swap the start and end colours");
+        swapButton.setFocusable(false);
+        swapButton.addActionListener(new ActionListener() {
+
+            public void actionPerformed(ActionEvent e) {
+                Color start = canvas.getColor();
+                canvas.setColor(new Color(end.getRed(), end.getGreen(), end.getBlue()));
+                canvas.refreshColorButtonRelay();
+                setEnd(start);
+                startButton.repaint();
+                endButton.repaint();
+            }
+        });
+        subToolBarSection.add(swapButton);
+
+        // Fade out instead of a second colour
+        final AlcSubToggleButton fadeButton = new AlcSubToggleButton("Fade Out", null);
+        fadeButton.setToolTipText("Fade every stroke out to nothing instead of turning it into the end colour");
+        fadeButton.setSelected(fadeOut);
+        fadeButton.addActionListener(new ActionListener() {
+
+            public void actionPerformed(ActionEvent e) {
+                fadeOut = fadeButton.isSelected();
+                PREFS.putBoolean("Gradient Fade Out", fadeOut);
+                endButton.repaint();
+            }
+        });
+        subToolBarSection.add(fadeButton);
+    }
+
+    private void setEnd(Color c) {
+        if (c != null) {
+            end = new Color(c.getRed(), c.getGreen(), c.getBlue());
+            PREFS.putInt("Gradient End Colour", end.getRGB());
+        }
+    }
+
+    /** The colour at the end of a stroke of this shape */
+    private Color endColor(AlcShape shape) {
+        if (fadeOut) {
+            Color c = shape.getColor();
+            return new Color(c.getRed(), c.getGreen(), c.getBlue(), 0);
+        }
+        return end;
+    }
+
+    @Override
+    public void mousePressed(MouseEvent e) {
+        marks.clear();
+        travelled = 0;
+        lastPen = canvas.getPenLocation();
+    }
+
+    @Override
+    public void mouseDragged(MouseEvent e) {
+        Point2D.Float p = canvas.getPenLocation();
+        if (lastPen != null && p != null) {
+            travelled += (float) p.distance(lastPen);
+        }
+        lastPen = p;
+    }
 
     @Override
     protected void affect() {
-
-        for (int i = 0; i < canvas.createShapes.size(); i++) {
-            setGradient(canvas.createShapes.get(i));
-        }
-        for (int i = 0; i < canvas.affectShapes.size(); i++) {
-            setGradient(canvas.affectShapes.get(i));
-        }
-        
-     
+        // The stroke so far runs from the start colour to the end colour - it stretches as the stroke grows
+        float total = Math.max(1F, travelled);
+        mark(canvas.createShapes, total, true);
+        // Copies made by affects before this one (Mirror runs after and copies the gradient itself)
+        mark(canvas.affectShapes, total, false);
     }
 
-    private void setGradient(AlcShape shape) {
+    private void mark(List<AlcShape> shapes, float total, boolean all) {
+        for (int i = 0; i < shapes.size(); i++) {
+            AlcShape s = shapes.get(i);
+            Mark m = marks.get(s);
+            if (m == null && !all && s.getAlongColor() != null) {
+                continue;
+            }
+            Rectangle2D b = s.getPath().getBounds2D();
+            if (m == null) {
+                m = new Mark();
+                m.from = m.to = travelled;
+                marks.put(s, m);
+            } else if (m.version != version(s) || m.x != b.getX() || m.y != b.getY() || m.w != b.getWidth() || m.h != b.getHeight()) {
+                // Still growing - it reaches to where the pen is now
+                m.to = travelled;
+            }
+            m.version = version(s);
+            m.x = b.getX();
+            m.y = b.getY();
+            m.w = b.getWidth();
+            m.h = b.getHeight();
+            s.setAlongGradient(endColor(s), m.from / total, m.to / total);
+        }
+    }
 
-        GeneralPath path = shape.getPath();
+    /** Changes with the shape's points - its number of points is enough to see it grow */
+    private static int version(AlcShape s) {
+        return s.getTotalPoints() * 31 + (s.getSpine() == null ? 0 : s.getSpine().size());
+    }
 
-        Point2D p1 = null;
-        Point2D p2 = null;
+    /** A small colour swatch for the buttons - the start one shows the current colour */
+    private class Swatch implements Icon {
 
-        // If the shape has been created with pen strokes
-        if (shape.isPenShape()) {
-            if (shape.hasSpine()) {
-                ArrayList<Point2D.Float> spine = shape.getSpine();
-                if (spine.size() > 0) {
-                    p1 = spine.get(0);
-                    p2 = spine.get(spine.size() / 2);
-                }
+        private final boolean start;
 
+        Swatch(boolean start) {
+            this.start = start;
+        }
+
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            Color colour = start ? canvas.getColor() : end;
+            if (!start && fadeOut) {
+                // A checkerboard shows it fades to nothing
+                g2.setColor(new Color(200, 200, 200));
+                g2.fillRoundRect(x, y, 14, 14, 4, 4);
+                g2.setColor(new Color(130, 130, 130));
+                g2.fillRect(x + 2, y + 2, 5, 5);
+                g2.fillRect(x + 7, y + 7, 5, 5);
             } else {
-                PathIterator iterator = path.getPathIterator(null);
-                float[] currentPoints = new float[6];
-                search:
-                while (!iterator.isDone()) {
-                    switch (iterator.currentSegment(currentPoints)) {
-                        case PathIterator.SEG_MOVETO:
-                            // Use the start point for the first point
-                            p1 = new Point2D.Float(currentPoints[0], currentPoints[1]);
-                            break search;
-
-                    }
-                    iterator.next();
-                }
-                // Use the last point for the second point
-                p2 = path.getCurrentPoint();
+                g2.setColor(new Color(colour.getRed(), colour.getGreen(), colour.getBlue()));
+                g2.fillRoundRect(x, y, 14, 14, 4, 4);
             }
-
-
-        // Else if the shape has been not been created with pen strokes
-        // Then lets make a random gradient
-        } else {
-            if (shape.getGradientPaint() == null) {
-                Rectangle bounds = path.getBounds();
-                p1 = getRandomPoint(bounds);
-                p2 = getRandomPoint(bounds);
-            }
+            g2.setColor(new Color(255, 255, 255, 90));
+            g2.drawRoundRect(x, y, 13, 13, 4, 4);
+            g2.dispose();
         }
-        
-//        p1.setLocation((float)canvas.calculateZoomedX(p1.getX()),(float)canvas.calculateZoomedY(p1.getY()));
-//        p2.setLocation((float)canvas.calculateZoomedX(p2.getX()),(float)canvas.calculateZoomedY(p2.getY()));
 
-        if (p1 != null && p2 != null) {
-            Color color = shape.getColor();
-            Color transparent = new Color(color.getRed(), color.getGreen(), color.getBlue(), 0);
-            GradientPaint gradient = new GradientPaint(p1, shape.getColor(), p2, transparent);
-            //System.out.println("1: " + shape.getColor().getTransparency() + " 2: " + transparent.getTransparency());
-            shape.setGradientPaint(gradient);
+        public int getIconWidth() {
+            return 14;
         }
-    }
 
-    private Point2D.Float getRandomPoint(Rectangle bounds) {
-        float x = math.random(bounds.x, bounds.x + bounds.width);
-        float y = math.random(bounds.y, bounds.y + bounds.height);
-        return new Point2D.Float(x, y);
+        public int getIconHeight() {
+            return 14;
+        }
     }
 }

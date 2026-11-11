@@ -156,6 +156,12 @@ public class BrushShapes extends AlcModule implements AlcConstants {
         return Math.max(1F, canvas.getLineWidth());
     }
 
+    /** Below a line weight of 1 the brushes keep their look and get finer - every width and spread
+     *  is scaled down by this. At 1 and above it is 1 and changes nothing */
+    private float thin() {
+        return Math.max(0.1F, Math.min(1F, canvas.getLineWidth()));
+    }
+
     /** Transparency of a new shape - the canvas setting, the brush's own share and the pressure opacity */
     private int alpha(double factor) {
         return Math.max(1, Math.min(255, (int) Math.round(canvas.getAlpha() * factor * opacity)));
@@ -214,7 +220,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
                 }
                 break;
             case HATCHING:
-                lines = new AlcShape(new GeneralPath(), canvas.getColor(), alpha(0.85), STYLE_STROKE, Math.max(1F, size() / 4));
+                lines = new AlcShape(new GeneralPath(), canvas.getColor(), alpha(0.85), STYLE_STROKE, Math.max(1F, size() / 4) * thin());
                 canvas.createShapes.add(lines);
                 break;
         }
@@ -281,7 +287,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
                 startSketchy(last);
                 break;
             case HATCHING:
-                lines = new AlcShape(new GeneralPath(), canvas.getColor(), alpha(0.85), STYLE_STROKE, Math.max(1F, size() / 4));
+                lines = new AlcShape(new GeneralPath(), canvas.getColor(), alpha(0.85), STYLE_STROKE, Math.max(1F, size() / 4) * thin());
                 canvas.createShapes.add(lines);
                 hatchCarry = hatchGap();
                 hatchTo(last, last);
@@ -428,7 +434,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
             f.tied = random.nextDouble() < 0.3;
             boolean core = random.nextDouble() < 0.18;
             f.life = core ? 6 + random.nextInt(10) : (f.tied ? 50 : 30) + random.nextInt(60);
-            float width = (float) ((core ? 1.2 : 0.3) + random.nextDouble() * (core ? 1.4 : 0.8)) * scale;
+            float width = (float) ((core ? 1.2 : 0.3) + random.nextDouble() * (core ? 1.4 : 0.8)) * scale * thin();
             double shade = core ? 0.35 + random.nextDouble() * 0.4 : 0.07 + random.nextDouble() * 0.3;
             GeneralPath path = new GeneralPath();
             path.moveTo(f.x, f.y);
@@ -493,7 +499,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
         strandOffsets.clear();
         float size = size();
         int count = Math.min(10, 4 + (int) (size / 2.5F));
-        float spread = Math.max(1.2F, size * 0.5F);
+        float spread = Math.max(1.2F, size * 0.5F) * thin();
         for (int i = 0; i < count; i++) {
             strandOffsets.add((float) ((random.nextDouble() * 2 - 1) * spread));
         }
@@ -515,7 +521,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
                 start = new Point2D.Float(p.x, p.y);
             }
             // Pressing harder makes the strands thicker and darker
-            float width = (float) ((0.45 + random.nextDouble() * 0.45) * Math.max(1, size / 6) * (0.2 + 1.3 * pr));
+            float width = (float) ((0.45 + random.nextDouble() * 0.45) * Math.max(1, size / 6) * (0.2 + 1.3 * pr)) * thin();
             AlcShape strand = new AlcShape(start, canvas.getColor(),
                     alpha((0.3 + random.nextDouble() * 0.35) * (0.2 + 0.8 * pr)), STYLE_STROKE, width);
             next.add(strand);
@@ -537,7 +543,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
         }
         for (int i = 0; i < strands.size(); i++) {
             // A light touch draws a narrow line, a firm one spreads the strands wider
-            float offset = strandOffsets.get(i) * (0.45F + 0.55F * pr) + (float) (random.nextGaussian() * 0.3);
+            float offset = strandOffsets.get(i) * (0.45F + 0.55F * pr) + (float) (random.nextGaussian() * 0.3 * thin());
             // Straight pieces join exactly where the next pressure piece starts
             strands.get(i).lineTo(new Point2D.Float(p.x + nx * offset, p.y + ny * offset));
         }
@@ -546,9 +552,9 @@ public class BrushShapes extends AlcModule implements AlcConstants {
         int specks = (int) Math.ceil(length * (0.4 + size * 0.08) * (0.3 + 0.7 * pr));
         for (int i = 0; i < specks; i++) {
             float t = random.nextFloat();
-            float offset = (float) ((random.nextDouble() * 2 - 1) * Math.max(1.5, size * 0.6));
+            float offset = (float) ((random.nextDouble() * 2 - 1) * Math.max(1.5, size * 0.6) * thin());
             float x = last.x + dx * t + nx * offset, y = last.y + dy * t + ny * offset;
-            pencilGrain.append(speck(x, y, (float) (0.35 + random.nextDouble() * 0.45)), false);
+            pencilGrain.append(speck(x, y, (float) (0.35 + random.nextDouble() * 0.45) * thin()), false);
         }
     }
 
@@ -561,7 +567,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
         float base = size * 0.5F * (0.08F + 1.03F * pressure());
         // Start thin and swell over the first part of the stroke
         float taperIn = Math.min(1F, 0.2F + travelled / (size * 3 + 18));
-        return Math.max(0.3F, base * taperIn);
+        return Math.max(0.3F, base * taperIn) * thin();
     }
 
     private void taperInkEnd() {
@@ -578,7 +584,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
         int k = Math.min(n - 1, points);
         for (int j = 0; j < k; j++) {
             int index = n - 1 - j;
-            widths.set(index, Math.max(0.3F, widths.get(index) * (j + 1) / (k + 1)));
+            widths.set(index, Math.max(Math.min(0.3F, widths.get(index)), widths.get(index) * (j + 1) / (k + 1)));
         }
         shape.createSpine();
     }
@@ -633,7 +639,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
         }
         // Ease towards the new width so the line breathes instead of jumping
         dynWidth = (dynWidth == 0) ? target : dynWidth + (target - dynWidth) * smoothing;
-        ribbonTo(ribbons.get(0), p, Math.max(0.3F, dynWidth * taper));
+        ribbonTo(ribbons.get(0), p, Math.max(0.3F, dynWidth * taper) * thin());
     }
 
     private static float clamp(float v, float min, float max) {
@@ -652,7 +658,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
         for (int i = 0; i < count; i++) {
             phases[i][0] = (float) (random.nextDouble() * Math.PI * 2);
             phases[i][1] = (float) (random.nextDouble() * Math.PI * 2);
-            strandOffsets.add((float) (random.nextGaussian() * (size * 0.25 + 0.8)));
+            strandOffsets.add((float) (random.nextGaussian() * (size * 0.25 + 0.8) * thin()));
         }
         startSketchySegment(null, p);
     }
@@ -669,7 +675,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
             if (start == null) {
                 start = new Point2D.Float(p.x, p.y);
             }
-            float width = (float) (Math.max(0.8, size / 3) * (0.7 + random.nextDouble() * 0.5) * (0.2 + 1.3 * pr));
+            float width = (float) (Math.max(0.8, size / 3) * (0.7 + random.nextDouble() * 0.5) * (0.2 + 1.3 * pr)) * thin();
             AlcShape s = new AlcShape(start, canvas.getColor(),
                     alpha((0.3 + random.nextDouble() * 0.3) * (0.25 + 0.75 * pr)), STYLE_STROKE, width);
             next.add(s);
@@ -687,7 +693,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
         float length = (float) Math.max(0.001, Math.hypot(dx, dy));
         float nx = -dy / length, ny = dx / length;
         // The lines spread apart a little when drawing fast, like a loose hand
-        float spread = (size() * 0.5F + 1.8F) * (0.6F + Math.min(1.2F, velocity * 0.4F));
+        float spread = (size() * 0.5F + 1.8F) * (0.6F + Math.min(1.2F, velocity * 0.4F)) * thin();
         for (int i = 0; i < strands.size(); i++) {
             float drift = strandOffsets.get(i) + spread * (float) (Math.sin(travelled / (28 + i * 9) + phases[i][0]) * 0.7
                     + Math.sin(travelled / (11 + i * 3) + phases[i][1]) * 0.3);
@@ -701,7 +707,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
     // HATCHING - short parallel lines at an even spacing along the stroke
     //////////////////////////////////////////////////////////////
     private float hatchGap() {
-        return Math.max(3F, size() * 0.8F + 2.5F);
+        return Math.max(3F, size() * 0.8F + 2.5F) * Math.max(0.35F, thin());
     }
 
     private void hatchTo(Point2D.Float a, Point2D.Float b) {
@@ -713,7 +719,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
             float t = d > 0 ? pos / d : 0;
             float cx = a.x + (b.x - a.x) * t, cy = a.y + (b.y - a.y) * t;
             double angle = Math.toRadians(-50 + random.nextGaussian() * 3);
-            float half = (size() * 2F + 5F) * (0.12F + 1.0F * pressure()) * (0.85F + random.nextFloat() * 0.3F);
+            float half = (size() * 2F + 5F) * (0.12F + 1.0F * pressure()) * (0.85F + random.nextFloat() * 0.3F) * Math.max(0.35F, thin());
             float ux = (float) Math.cos(angle) * half, uy = (float) Math.sin(angle) * half;
             float shift = (float) (random.nextGaussian() * half * 0.12);
             GeneralPath line = new GeneralPath();
@@ -730,7 +736,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
     // MARKER - flat chisel tip at 45 degrees
     //////////////////////////////////////////////////////////////
     private void markerSegment(Point2D.Float a, Point2D.Float b) {
-        float width = Math.max(6F, size() * 3F) * (0.15F + 0.98F * pressure());
+        float width = Math.max(6F, size() * 3F) * (0.15F + 0.98F * pressure()) * thin();
         // The marker keeps its centre line as a spine - affects like Displace move the spine
         // and the outline is rebuilt from it, so the stroke stays one clean ribbon
         ArrayList<Point2D.Float> spine = marker.getSpine();
@@ -1038,7 +1044,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
         float size = size();
         float pr = pressure();
         // A firm press lays down a wider, denser band of charcoal
-        float radius = (size * 1.25F + 3F) * (0.25F + 1.02F * pr);
+        float radius = (size * 1.25F + 3F) * (0.25F + 1.02F * pr) * thin();
         float distance = (float) a.distance(b);
         int steps = Math.max(1, (int) (distance / 2));
         int perStep = Math.max(2, (int) ((4 + size * 1.3F) * (0.2F + 0.9F * pr)));
@@ -1049,7 +1055,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
                 double r = Math.abs(random.nextGaussian()) * radius * 0.45;
                 double angle = random.nextDouble() * Math.PI * 2;
                 float x = (float) (cx + Math.cos(angle) * r), y = (float) (cy + Math.sin(angle) * r);
-                float speck = (float) ((0.5 + random.nextDouble() * 1.4) * Math.max(1, size / 8));
+                float speck = (float) ((0.5 + random.nextDouble() * 1.4) * Math.max(1, size / 8)) * thin();
                 // Darker specks near the middle of the stroke
                 int shade = (r < radius * 0.25) ? 0 : (r < radius * 0.55 ? 1 : 2);
                 grain[shade].append(speck(x, y, speck), false);

@@ -1,18 +1,20 @@
-# Alkemy build script.
+﻿# Alkemy build script.
 # Requires only a JDK 22+ (for the Windows Ink pen support).
 #
 #   powershell -ExecutionPolicy Bypass -File build.ps1            # build into dist\Alchemy
 #   powershell -ExecutionPolicy Bypass -File build.ps1 -Run       # build and launch
 #   powershell -ExecutionPolicy Bypass -File build.ps1 -Package   # also make release\Alkemy-<version>-windows-x64.zip
+#   powershell -ExecutionPolicy Bypass -File build.ps1 -Dist dist\Alchemy-test   # build into another folder
 #                                                                 # (Alkemy.exe with its own Java - nothing to install)
 
-param([switch]$Run, [switch]$Package, [string]$Version = '1.0.0')
+param([switch]$Run, [switch]$Package, [string]$Version = '1.0.0', [string]$Dist = 'dist\Alchemy')
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $build = Join-Path $root 'build'
 $classes = Join-Path $build 'classes'
-$dist = Join-Path $root 'dist\Alchemy'
+# -Dist builds somewhere else - e.g. while the app is open from dist\Alchemy
+$dist = Join-Path $root $Dist
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
