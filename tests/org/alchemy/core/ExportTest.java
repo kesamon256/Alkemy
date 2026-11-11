@@ -35,6 +35,8 @@ public class ExportTest {
                 try {
                     AlcCanvas c = Alchemy.canvas;
                     c.setLineWidth(4);
+                    // The checks look for dark ink - not whatever colour was last picked in the app
+                    c.setColor(java.awt.Color.BLACK);
                     UndoSmokeTest.stroke(200, 200, 500, 220);
                     // A second stroke far outside the original window
                     c.panBy(-1600, 0);

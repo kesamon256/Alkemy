@@ -889,6 +889,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
 
         AlcShape flatten() {
             AlcShape flat = new AlcShape(getPath(), getColor(), getAlpha(), STYLE_FILL, getLineWidth());
+            flat.setAlongGradient(getAlongColor(), getAlongFrom(), getAlongTo());
             flat.setGradientPaint(getGradientPaint());
             return flat;
         }
@@ -926,6 +927,7 @@ public class BrushShapes extends AlcModule implements AlcConstants {
         /** A plain copy with the finished outline, for committing to the canvas */
         AlcShape flatten() {
             AlcShape flat = new AlcShape(getPath(), getColor(), getAlpha(), STYLE_FILL, getLineWidth());
+            flat.setAlongGradient(getAlongColor(), getAlongFrom(), getAlongTo());
             flat.setGradientPaint(getGradientPaint());
             return flat;
         }

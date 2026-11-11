@@ -3680,12 +3680,13 @@ public class AlcCanvas extends JPanel implements AlcConstants, MouseListener, Mo
 
     /** Draw the shapes being made - the create, affect and guide lists */
     private void drawLiveShapes(Graphics2D g2) {
+        AlcAlong.liveFrame();
         for (int j = 0; j < activeShapeList.length; j++) {
             for (int i = 0; i < activeShapeList[j].size(); i++) {
                 AlcShape currentShape = (AlcShape) activeShapeList[j].get(i);
                 // A gradient along the stroke
                 if (AlcAlong.has(currentShape)) {
-                    AlcAlong.draw(g2, currentShape);
+                    AlcAlong.draw(g2, currentShape, true);
                     continue;
                 }
                 // SOLID - under the outline when both are drawn

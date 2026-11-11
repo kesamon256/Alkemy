@@ -910,6 +910,35 @@ public class AlcShape implements AlcConstants, Cloneable, Serializable {
         this.alongTo = to;
     }
 
+    /** Goes up with every change made through the shape - the path can also grow by itself (see getCachedBounds) */
+    public int getVersion() {
+        return version;
+    }
+
+    private GeneralPath boundsPath;
+    private int boundsVersion = -1;
+    private double boundsX = Double.NaN, boundsY = Double.NaN;
+    private java.awt.geom.Rectangle2D bounds;
+
+    /**
+     * The bounds of the path, kept until the path changes - working them out goes through every point,
+     * which adds up when thousands of shapes are asked on every move of the pen. A change shows in the
+     * change counter, a new path, or a new end point (points added straight to the path)
+     */
+    public java.awt.geom.Rectangle2D getCachedBounds() {
+        Point2D end = path.getCurrentPoint();
+        double ex = (end == null) ? Double.NaN : end.getX(), ey = (end == null) ? Double.NaN : end.getY();
+        if (bounds == null || boundsPath != path || boundsVersion != version
+                || Double.compare(ex, boundsX) != 0 || Double.compare(ey, boundsY) != 0) {
+            bounds = path.getBounds2D();
+            boundsPath = path;
+            boundsVersion = version;
+            boundsX = ex;
+            boundsY = ey;
+        }
+        return bounds;
+    }
+
     public Color getAlongColor() {
         return alongColor;
     }

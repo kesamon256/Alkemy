@@ -14,46 +14,60 @@ import java.util.List;
 /**
  * A colour gradient that follows the stroke - from the shape's own colour to its "along" colour,
  * around every curve, not in a straight line across. The shape is painted in slices along its
- * centre line (the spine of a variable width line, or the line itself); each slice may only paint
- * its own part of the shape and shades from the colour where it starts to the colour where it ends.
- * Slices meet edge to edge across the line, so every pixel is painted once.
+ * centre line. Each slice paints only its own part and shades from the colour where it starts to
+ * the colour where it ends:
+ * <ul>
+ * <li>a shape made of many parts (specks of grain, hatching lines) - the parts are shared out
+ *     between the slices in the order they were drawn, each part painted once;</li>
+ * <li>a line - each slice draws its piece of the line, limited to a band across it so the pieces
+ *     meet edge to edge with no seam;</li>
+ * <li>a variable width line (with a spine) - the whole outline limited to each band in turn.</li>
+ * </ul>
+ * How many slices a shape gets follows how much its colour changes - a shape that is a small
+ * part of a long stroke is painted in one go with a straight gradient.
  */
 final class AlcAlong implements AlcConstants {
 
     private AlcAlong() {
     }
 
-    /** One slice of a shape: the area it may paint (null for the whole shape) and its colours at both ends */
+    /** One slice: what it draws, where it may draw, and where its two colours are */
     static final class Slice {
+        /** Only inside this - null for anywhere */
         Shape clip;
+        /** Draw this part instead of the whole shape - null for the whole shape */
+        Shape part;
+        /** Its ends along the shape, 0 to 1 */
+        float t1, t2;
+        /** Where its two colours are - the same point for one colour */
         float x1, y1, x2, y2;
-        Color c1, c2;
-        /** The clip as a Skia path, made when first needed */
-        Object skia;
+        /** The clip and the part as Skia paths, made when first needed */
+        Object skiaClip, skiaPart;
     }
 
-    /** Slices worked out for a shape, and how the shape looked then */
+    /** Slices worked out for how a shape looked */
     private static final class Cached {
         GeneralPath path;
-        int version, style, rgb, alpha, along, spine;
-        float width, from, to;
+        int version, style, dash, spine, count;
+        float width;
         double bx, by, bw, bh;
         List<Slice> slices;
+        /** Made in a hurry while drawing - one straight gradient for now, worked out properly later */
+        boolean quick;
+    }
 
-        boolean same(AlcShape s) {
-            java.awt.geom.Rectangle2D b = s.path.getBounds2D();
-            return s.path == path && s.version == version && s.style == style && s.color.getRGB() == rgb && s.alpha == alpha
-                    && s.alongColor.getRGB() == along && s.alongColor.getAlpha() == alongAlpha(s) && spineSize(s) == spine
-                    && s.lineWidth == width && s.alongFrom == from && s.alongTo == to
-                    && b.getX() == bx && b.getY() == by && b.getWidth() == bw && b.getHeight() == bh;
-        }
+    /** While a stroke is drawn, slices are worked out only for this long in a frame */
+    private static final long BUDGET = 4000000L;
+    private static long budgetEnd;
 
-        private static int alongAlpha(AlcShape s) {
-            return s.alongColor.getAlpha();
-        }
+    /** A new frame of the stroke being drawn starts - its time for working out slices starts again */
+    static void liveFrame() {
+        budgetEnd = System.nanoTime() + BUDGET;
     }
 
     private static final java.util.Map<AlcShape, Cached> cache = new java.util.WeakHashMap<AlcShape, Cached>();
+    /** Most slices for a shape that runs the whole stroke */
+    private static final int MAX_SLICES = 32;
 
     /** Does the shape change colour along its length */
     static boolean has(AlcShape s) {
@@ -64,8 +78,8 @@ final class AlcAlong implements AlcConstants {
         return (s.getSpine() == null) ? 0 : s.getSpine().size();
     }
 
-    /** The colour at a place along the stroke, 0 = start, 1 = end */
-    static Color colorAt(AlcShape s, float t, boolean unused) {
+    /** The colour at a place along the whole stroke, 0 = start, 1 = end */
+    static Color colorAt(AlcShape s, float t) {
         t = Math.max(0F, Math.min(1F, t));
         Color a = s.color, b = s.alongColor;
         float alpha = s.alpha * (1F - t + t * b.getAlpha() / 255F);
@@ -75,82 +89,125 @@ final class AlcAlong implements AlcConstants {
                 Math.max(0, Math.min(255, Math.round(alpha))));
     }
 
-    /** The slices of a shape - worked out again only when the shape has changed */
-    static synchronized List<Slice> slices(AlcShape s) {
-        Cached c = cache.get(s);
-        if (c != null && c.same(s)) {
-            return c.slices;
-        }
-        c = new Cached();
-        c.path = s.path;
-        c.version = s.version;
-        c.style = s.style;
-        c.rgb = s.color.getRGB();
-        c.alpha = s.alpha;
-        c.along = s.alongColor.getRGB();
-        c.spine = spineSize(s);
-        c.width = s.lineWidth;
-        c.from = s.alongFrom;
-        c.to = s.alongTo;
-        java.awt.geom.Rectangle2D b = s.path.getBounds2D();
-        c.bx = b.getX();
-        c.by = b.getY();
-        c.bw = b.getWidth();
-        c.bh = b.getHeight();
-        c.slices = build(s);
-        cache.put(s, c);
-        return c.slices;
-    }
-
-    /** Draw a shape with its gradient along it, with Java2D */
-    static void draw(Graphics2D g2, AlcShape s) {
-        Shape oldClip = g2.getClip();
-        java.awt.Paint oldPaint = g2.getPaint();
-        for (Slice slice : slices(s)) {
-            if (slice.clip != null) {
-                g2.clip(slice.clip);
-            }
-            if (s.isFilled()) {
-                g2.setPaint(paint(slice, true, s));
-                g2.fill(s.path);
-            }
-            if (s.isStroked()) {
-                g2.setStroke(s.getStroke());
-                g2.setPaint(paint(slice, false, s));
-                g2.draw(s.path);
-            }
-            g2.setClip(oldClip);
-        }
-        g2.setPaint(oldPaint);
-    }
-
-    /** The paint of a slice - for the tinted inside the colours are made lighter the same way */
-    static java.awt.Paint paint(Slice slice, boolean fill, AlcShape s) {
-        Color c1 = tint(slice.c1, fill, s), c2 = tint(slice.c2, fill, s);
-        if (slice.x1 == slice.x2 && slice.y1 == slice.y2) {
-            return c1;
-        }
-        return new GradientPaint(slice.x1, slice.y1, c1, slice.x2, slice.y2, c2);
-    }
-
     /** The inside under an outline is only a light tint */
-    static Color tint(Color c, boolean fill, AlcShape s) {
+    private static Color tint(Color c, boolean fill, AlcShape s) {
         if (fill && s.style == STYLE_BOTH) {
             return new Color(c.getRed(), c.getGreen(), c.getBlue(), Math.round(c.getAlpha() * 0.3F));
         }
         return c;
     }
 
+    /** The paint of a slice, for the inside or the outline */
+    static java.awt.Paint paint(Slice slice, boolean fill, AlcShape s) {
+        float range = s.alongTo - s.alongFrom;
+        Color c1 = tint(colorAt(s, s.alongFrom + range * slice.t1), fill, s);
+        if (slice.x1 == slice.x2 && slice.y1 == slice.y2) {
+            return c1;
+        }
+        Color c2 = tint(colorAt(s, s.alongFrom + range * slice.t2), fill, s);
+        return new GradientPaint(slice.x1, slice.y1, c1, slice.x2, slice.y2, c2);
+    }
+
+    /**
+     * How many slices - enough that the colour changes only a little within one, but none shorter
+     * than about 20 px: within a slice the colour already shades smoothly, so a short shape (a trail
+     * of the Flow brush) is painted in one go, however much of the gradient it covers
+     */
+    private static int count(AlcShape s, java.awt.geom.Rectangle2D bounds) {
+        float range = Math.abs(s.alongTo - s.alongFrom);
+        // A shape covering little of the gradient - one straight shade across it is enough
+        if (range < 0.15F) {
+            return 1;
+        }
+        // In steps of 4, so the count stays the same while the stroke stretches and nothing is worked out again
+        int byColour = Math.min(MAX_SLICES, (int) Math.ceil(range * MAX_SLICES / 4) * 4);
+        int byLength = (int) Math.ceil((bounds.getWidth() + bounds.getHeight()) / 20);
+        int n = Math.min(byColour, byLength);
+        return (n <= 2) ? 1 : n;
+    }
+
+    static List<Slice> slices(AlcShape s) {
+        return slices(s, false);
+    }
+
+    /**
+     * The slices of a shape - worked out again only when its shape has changed. While drawing
+     * (live) there is a time budget a frame: past it a changed shape gets one straight gradient for
+     * now, and its proper slices in a later frame - many trails changing at once stay quick
+     */
+    static synchronized List<Slice> slices(AlcShape s, boolean live) {
+        Cached c = cache.get(s);
+        java.awt.geom.Rectangle2D b = s.getCachedBounds();
+        int wanted = count(s, b);
+        if (c != null && c.path == s.path && c.version == s.version && c.style == s.style && c.dash == s.dash
+                && c.spine == spineSize(s) && c.width == s.lineWidth && c.bx == b.getX() && c.by == b.getY()
+                && c.bw == b.getWidth() && c.bh == b.getHeight() && c.count == wanted) {
+            if (!c.quick || (live && System.nanoTime() > budgetEnd)) {
+                return c.slices;
+            }
+        }
+        boolean hurry = live && wanted > 1 && System.nanoTime() > budgetEnd;
+        c = new Cached();
+        c.path = s.path;
+        c.version = s.version;
+        c.style = s.style;
+        c.dash = s.dash;
+        c.spine = spineSize(s);
+        c.width = s.lineWidth;
+        c.bx = b.getX();
+        c.by = b.getY();
+        c.bw = b.getWidth();
+        c.bh = b.getHeight();
+        c.count = wanted;
+        c.quick = hurry;
+        c.slices = hurry ? single(ends(s.path)) : build(s, wanted);
+        cache.put(s, c);
+        return c.slices;
+    }
+
+    /** Draw a shape with its gradient along it, with Java2D */
+    static void draw(Graphics2D g2, AlcShape s) {
+        draw(g2, s, false);
+    }
+
+    static void draw(Graphics2D g2, AlcShape s, boolean live) {
+        Shape oldClip = g2.getClip();
+        java.awt.Paint oldPaint = g2.getPaint();
+        for (Slice slice : slices(s, live)) {
+            if (slice.clip != null) {
+                g2.clip(slice.clip);
+            }
+            Shape what = (slice.part != null) ? slice.part : s.path;
+            if (s.isFilled()) {
+                g2.setPaint(paint(slice, true, s));
+                g2.fill(what);
+            }
+            if (s.isStroked()) {
+                g2.setStroke(s.getStroke());
+                g2.setPaint(paint(slice, false, s));
+                g2.draw(what);
+            }
+            if (slice.clip != null) {
+                g2.setClip(oldClip);
+            }
+        }
+        g2.setPaint(oldPaint);
+    }
+
     //////////////////////////////////////////////////////////////
     // WORKING OUT THE SLICES
     //////////////////////////////////////////////////////////////
-    private static List<Slice> build(AlcShape s) {
-        float[] line;
-        float reach;
+    /** The parts of a path, each as its own path, with the middle of each */
+    private static final class Parts {
+        ArrayList<GeneralPath> paths = new ArrayList<GeneralPath>();
+        ArrayList<float[]> middles = new ArrayList<float[]>();
+    }
+
+    private static List<Slice> build(AlcShape s, int count) {
         ArrayList<Point2D.Float> spine = s.getSpine();
         if (spine != null && spine.size() >= 2) {
-            // A variable width line - along its spine, as wide as its widest point
-            line = new float[spine.size() * 2];
+            // A variable width line - its outline limited to bands across the spine
+            float[] line = new float[spine.size() * 2];
             for (int i = 0; i < spine.size(); i++) {
                 line[i * 2] = spine.get(i).x;
                 line[i * 2 + 1] = spine.get(i).y;
@@ -159,93 +216,190 @@ final class AlcAlong implements AlcConstants {
             for (Float w : s.getSpineWidth()) {
                 widest = Math.max(widest, w);
             }
-            // With room to spare - the outline bulges a little past the spine on a bend, and the
-            // soft edge must not be cut, or the line looks jagged there
-            reach = widest + Math.max(4F, widest * 0.5F);
-        } else if (!s.isFilled()) {
-            // A line - along itself
-            line = points(s.path, false);
-            reach = s.lineWidth / 2F + Math.max(4F, s.lineWidth * 0.25F);
-        } else {
-            int parts = parts(s.path);
-            if (parts > 1) {
-                // Specks or pieces - from the middle of one to the next, in the order they were drawn
-                line = points(s.path, true);
-                reach = partSize(s.path) + 4;
-            } else {
-                // One solid outline - straight across, from where it starts to its far side
-                return single(s, far(s.path));
-            }
-        }
-        line = clean(line);
-        double total = length(line);
-        int count = (int) Math.max(1, Math.min(48, Math.round(total / 8)));
-        if (Math.abs(s.alongTo - s.alongFrom) < 0.02F || line.length < 4) {
-            count = 1;
+            // With room to spare - the outline bulges a little past the spine on a bend
+            return banded(s, clean(line), widest + Math.max(4F, widest * 0.5F), count, false);
         }
         if (count == 1) {
-            return single(s, line.length >= 4 ? new float[]{line[0], line[1], line[line.length - 2], line[line.length - 1]} : null);
+            return single(ends(s.path));
         }
-        List<Slice> slices = new ArrayList<Slice>(count);
-        BasicStroke band = new BasicStroke(reach * 2, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND);
-        for (int k = 0; k < count; k++) {
-            double a = total * k / count, b = total * (k + 1) / count;
-            GeneralPath piece = piece(line, a, b, k == 0 ? reach : 0, k == count - 1 ? reach : 0);
-            Slice slice = new Slice();
-            slice.clip = band.createStrokedShape(piece);
-            float[] pa = pointAt(line, a), pb = pointAt(line, b);
-            slice.x1 = pa[0];
-            slice.y1 = pa[1];
-            slice.x2 = pb[0];
-            slice.y2 = pb[1];
-            slice.c1 = colorAt(s, s.alongFrom + (s.alongTo - s.alongFrom) * k / count, false);
-            slice.c2 = colorAt(s, s.alongFrom + (s.alongTo - s.alongFrom) * (k + 1) / count, false);
-            slices.add(slice);
+        Parts parts = parts(s.path);
+        if (parts.paths.size() > 1) {
+            return grouped(s, parts, count);
         }
-        return slices;
+        if (!s.isFilled()) {
+            // A line - each slice draws its own piece, limited to its band
+            float[] line = clean(points(s.path));
+            return banded(s, line, s.lineWidth / 2F + Math.max(4F, s.lineWidth * 0.25F), count, s.dash == DASH_NONE);
+        }
+        // One solid outline - straight across, from where it starts to its far side
+        return single(far(s.path));
     }
 
-    /** The whole shape as one slice, shading from one point to another */
-    private static List<Slice> single(AlcShape s, float[] ends) {
+    /** The whole shape as one slice */
+    private static List<Slice> single(float[] ends) {
         Slice slice = new Slice();
+        slice.t1 = 0F;
+        slice.t2 = 1F;
         if (ends != null) {
             slice.x1 = ends[0];
             slice.y1 = ends[1];
             slice.x2 = ends[2];
             slice.y2 = ends[3];
         }
-        slice.c1 = colorAt(s, s.alongFrom, false);
-        slice.c2 = colorAt(s, s.alongTo, false);
         List<Slice> one = new ArrayList<Slice>(1);
         one.add(slice);
         return one;
     }
 
-    /** The points of a path in order - or the middle of each of its parts */
-    private static float[] points(GeneralPath path, boolean middles) {
-        float[] out = new float[64];
-        int n = 0;
+    /** Where a path starts and where it ends - quick, without going through it twice */
+    private static float[] ends(GeneralPath path) {
+        PathIterator it = path.getPathIterator(null);
+        if (it.isDone()) {
+            return null;
+        }
         float[] q = new float[6];
+        it.currentSegment(q);
+        Point2D last = path.getCurrentPoint();
+        if (last == null) {
+            return null;
+        }
+        return new float[]{q[0], q[1], (float) last.getX(), (float) last.getY()};
+    }
+
+    /** Slices along a centre line, each limited to a band across the line */
+    private static List<Slice> banded(AlcShape s, float[] line, float reach, int count, boolean pieces) {
+        if (line.length < 4) {
+            return single(null);
+        }
+        double total = length(line);
+        count = Math.max(1, Math.min(count, (int) Math.ceil(total / 6)));
+        if (count == 1) {
+            return single(new float[]{line[0], line[1], line[line.length - 2], line[line.length - 1]});
+        }
+        List<Slice> slices = new ArrayList<Slice>(count);
+        BasicStroke band = new BasicStroke(reach * 2, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND);
+        // A piece of the line reaches a little past its band, so its own round end is cut off cleanly
+        double over = s.lineWidth + 2;
+        for (int k = 0; k < count; k++) {
+            double a = total * k / count, b = total * (k + 1) / count;
+            Slice slice = new Slice();
+            slice.clip = band.createStrokedShape(piece(line, a, b, k == 0 ? reach : 0, k == count - 1 ? reach : 0));
+            if (pieces) {
+                slice.part = piece(line, Math.max(0, a - over), Math.min(total, b + over), 0, 0);
+            }
+            float[] pa = pointAt(line, a), pb = pointAt(line, b);
+            slice.x1 = pa[0];
+            slice.y1 = pa[1];
+            slice.x2 = pb[0];
+            slice.y2 = pb[1];
+            slice.t1 = (float) k / count;
+            slice.t2 = (float) (k + 1) / count;
+            slices.add(slice);
+        }
+        return slices;
+    }
+
+    /** The parts shared out between the slices in the order they were drawn - each painted once */
+    private static List<Slice> grouped(AlcShape s, Parts parts, int count) {
+        int n = parts.paths.size();
+        // How far along the parts each one is - from one middle to the next
+        double[] at = new double[n];
+        for (int i = 1; i < n; i++) {
+            float[] p = parts.middles.get(i - 1), q = parts.middles.get(i);
+            at[i] = at[i - 1] + Math.hypot(q[0] - p[0], q[1] - p[1]);
+        }
+        double total = Math.max(1e-6, at[n - 1]);
+        count = Math.max(1, Math.min(count, n));
+        List<Slice> slices = new ArrayList<Slice>(count);
+        int i = 0;
+        for (int k = 0; k < count && i < n; k++) {
+            double limit = total * (k + 1) / count;
+            GeneralPath group = new GeneralPath(s.path.getWindingRule());
+            int first = i;
+            while (i < n && (at[i] <= limit || k == count - 1)) {
+                group.append(parts.paths.get(i), false);
+                i++;
+            }
+            if (i == first) {
+                continue;
+            }
+            Slice slice = new Slice();
+            slice.part = group;
+            float[] p = parts.middles.get(first), q = parts.middles.get(i - 1);
+            slice.x1 = p[0];
+            slice.y1 = p[1];
+            slice.x2 = q[0];
+            slice.y2 = q[1];
+            slice.t1 = (float) (at[first] / total);
+            slice.t2 = (float) (at[i - 1] / total);
+            slices.add(slice);
+        }
+        return slices;
+    }
+
+    /** Split a path into its parts - each starts where the path moves to a new place */
+    private static Parts parts(GeneralPath path) {
+        Parts parts = new Parts();
+        GeneralPath current = null;
         float sx = 0, sy = 0;
         int count = 0;
-        for (PathIterator it = path.getPathIterator(null, 1.0); !it.isDone(); it.next()) {
+        float[] q = new float[6];
+        for (PathIterator it = path.getPathIterator(null); !it.isDone(); it.next()) {
             int type = it.currentSegment(q);
-            if (middles) {
-                if (type == PathIterator.SEG_MOVETO && count > 0) {
-                    if (n + 2 > out.length) {
-                        out = java.util.Arrays.copyOf(out, out.length * 2);
-                    }
-                    out[n++] = sx / count;
-                    out[n++] = sy / count;
-                    sx = sy = 0;
-                    count = 0;
+            if (type == PathIterator.SEG_MOVETO) {
+                if (current != null) {
+                    parts.paths.add(current);
+                    parts.middles.add(new float[]{sx / count, sy / count});
                 }
-                if (type != PathIterator.SEG_CLOSE) {
+                current = new GeneralPath(path.getWindingRule());
+                current.moveTo(q[0], q[1]);
+                sx = q[0];
+                sy = q[1];
+                count = 1;
+                continue;
+            }
+            if (current == null) {
+                current = new GeneralPath(path.getWindingRule());
+                current.moveTo(0, 0);
+                count = 1;
+            }
+            switch (type) {
+                case PathIterator.SEG_LINETO:
+                    current.lineTo(q[0], q[1]);
                     sx += q[0];
                     sy += q[1];
                     count++;
-                }
-            } else if (type != PathIterator.SEG_CLOSE) {
+                    break;
+                case PathIterator.SEG_QUADTO:
+                    current.quadTo(q[0], q[1], q[2], q[3]);
+                    sx += q[2];
+                    sy += q[3];
+                    count++;
+                    break;
+                case PathIterator.SEG_CUBICTO:
+                    current.curveTo(q[0], q[1], q[2], q[3], q[4], q[5]);
+                    sx += q[4];
+                    sy += q[5];
+                    count++;
+                    break;
+                default:
+                    current.closePath();
+            }
+        }
+        if (current != null) {
+            parts.paths.add(current);
+            parts.middles.add(new float[]{sx / count, sy / count});
+        }
+        return parts;
+    }
+
+    /** The points of a path in order, curves flattened */
+    private static float[] points(GeneralPath path) {
+        float[] out = new float[64];
+        int n = 0;
+        float[] q = new float[6];
+        for (PathIterator it = path.getPathIterator(null, 0.5); !it.isDone(); it.next()) {
+            if (it.currentSegment(q) != PathIterator.SEG_CLOSE) {
                 if (n + 2 > out.length) {
                     out = java.util.Arrays.copyOf(out, out.length * 2);
                 }
@@ -253,57 +407,12 @@ final class AlcAlong implements AlcConstants {
                 out[n++] = q[1];
             }
         }
-        if (middles && count > 0) {
-            if (n + 2 > out.length) {
-                out = java.util.Arrays.copyOf(out, out.length * 2);
-            }
-            out[n++] = sx / count;
-            out[n++] = sy / count;
-        }
         return java.util.Arrays.copyOf(out, n);
-    }
-
-    private static int parts(GeneralPath path) {
-        int parts = 0;
-        float[] q = new float[6];
-        for (PathIterator it = path.getPathIterator(null); !it.isDone(); it.next()) {
-            if (it.currentSegment(q) == PathIterator.SEG_MOVETO) {
-                parts++;
-            }
-        }
-        return parts;
-    }
-
-    /** About how far a part reaches from its middle */
-    private static float partSize(GeneralPath path) {
-        float[] q = new float[6];
-        float biggest = 0, minX = 0, minY = 0, maxX = 0, maxY = 0;
-        boolean open = false;
-        for (PathIterator it = path.getPathIterator(null, 1.0); !it.isDone(); it.next()) {
-            int type = it.currentSegment(q);
-            if (type == PathIterator.SEG_MOVETO) {
-                if (open) {
-                    biggest = Math.max(biggest, Math.max(maxX - minX, maxY - minY));
-                }
-                minX = maxX = q[0];
-                minY = maxY = q[1];
-                open = true;
-            } else if (type != PathIterator.SEG_CLOSE) {
-                minX = Math.min(minX, q[0]);
-                maxX = Math.max(maxX, q[0]);
-                minY = Math.min(minY, q[1]);
-                maxY = Math.max(maxY, q[1]);
-            }
-        }
-        if (open) {
-            biggest = Math.max(biggest, Math.max(maxX - minX, maxY - minY));
-        }
-        return biggest;
     }
 
     /** The start of an outline and its point furthest from the start */
     private static float[] far(GeneralPath path) {
-        float[] p = points(path, false);
+        float[] p = points(path);
         if (p.length < 4) {
             return null;
         }

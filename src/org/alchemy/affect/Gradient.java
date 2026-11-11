@@ -49,6 +49,8 @@ public class Gradient extends AlcModule {
     private boolean fadeOut = PREFS.getBoolean("Gradient Fade Out", false);
     private AlcToolBarSubSection subToolBarSection;
 
+    /** While drawing, the gradient is stretched over the stroke in steps of this much longer */
+    private static final double STEP = 1.06;
     /** How far the pen has gone in this stroke */
     private float travelled;
     private Point2D.Float lastPen;
@@ -170,8 +172,15 @@ public class Gradient extends AlcModule {
 
     @Override
     protected void affect() {
-        // The stroke so far runs from the start colour to the end colour - it stretches as the stroke grows
+        // The stroke so far runs from the start colour to the end colour - it stretches as the stroke grows.
+        // While drawing it stretches in small steps, so what is drawn keeps its colours most of the time
+        // and is not painted again on every move; when the pen lifts the end is exactly the end colour
         float total = Math.max(1F, travelled);
+        if (canvas.isPenDown()) {
+            // At least 40 px at a time - at the start of a stroke 6 % would be every move
+            total = (total < 40 / (STEP - 1)) ? (float) (Math.ceil(total / 40) * 40)
+                    : (float) Math.pow(STEP, Math.ceil(Math.log(total) / Math.log(STEP)));
+        }
         mark(canvas.createShapes, total, true);
         // Copies made by affects before this one (Mirror runs after and copies the gradient itself)
         mark(canvas.affectShapes, total, false);
@@ -184,7 +193,7 @@ public class Gradient extends AlcModule {
             if (m == null && !all && s.getAlongColor() != null) {
                 continue;
             }
-            Rectangle2D b = s.getPath().getBounds2D();
+            Rectangle2D b = s.getCachedBounds();
             if (m == null) {
                 m = new Mark();
                 m.from = m.to = travelled;

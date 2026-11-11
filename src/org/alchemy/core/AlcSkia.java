@@ -164,7 +164,7 @@ final class AlcSkia {
             along = s.alongColor;
             alongFrom = s.alongFrom;
             alongTo = s.alongTo;
-            java.awt.geom.Rectangle2D b = path.getBounds2D();
+            java.awt.geom.Rectangle2D b = s.getCachedBounds();
             x = b.getX();
             y = b.getY();
             w = b.getWidth();
@@ -175,10 +175,15 @@ final class AlcSkia {
         }
 
         boolean same(Key k) {
-            return k != null && k.shape == shape && k.path == path && k.version == version && k.style == style && k.rgb == rgb
-                    && k.alpha == alpha && k.width == width && k.gradient == gradient
-                    && java.util.Objects.equals(k.along, along) && k.alongFrom == alongFrom && k.alongTo == alongTo && k.x == x && k.y == y && k.w == w
-                    && k.h == h && Double.compare(k.cx, cx) == 0 && Double.compare(k.cy, cy) == 0;
+            return sameShape(k) && k.rgb == rgb && k.alpha == alpha && k.gradient == gradient
+                    && java.util.Objects.equals(k.along, along) && k.alongFrom == alongFrom && k.alongTo == alongTo;
+        }
+
+        /** The same outline - its colours may have changed (a gradient along the stroke stretching) */
+        boolean sameShape(Key k) {
+            return k != null && k.shape == shape && k.path == path && k.version == version && k.style == style
+                    && k.width == width && k.x == x && k.y == y && k.w == w && k.h == h
+                    && Double.compare(k.cx, cx) == 0 && Double.compare(k.cy, cy) == 0;
         }
     }
 
@@ -225,25 +230,38 @@ final class AlcSkia {
             region = region.intersection(new java.awt.Rectangle(0, 0, width, height));
         }
         final java.awt.Rectangle readRegion = region.isEmpty() ? new java.awt.Rectangle() : region;
+        AlcAlong.liveFrame();
         BufferedImage image = draw(liveTarget, width, height, transform, smoothing, new Drawing() {
             public void draw(Canvas canvas, Paint paint) {
-                updateBase(paint, all, keys, transform, smoothing);
-                // The kept start laid in pixel for pixel, then the rest of the stroke over it
-                if (baseKeys.size() > 0) {
-                    canvas.save();
-                    canvas.resetMatrix();
-                    try (io.github.humbleui.skija.Image kept = liveBase.makeImageSnapshot()) {
-                        canvas.drawImage(kept, 0, 0);
-                    }
-                    canvas.restore();
+                drawingLive = true;
+                try {
+                    drawLiveNow(canvas, paint, all, keys, transform, smoothing);
+                } finally {
+                    drawingLive = false;
                 }
-                drawShapes(canvas, paint, all, baseKeys.size(), all.size());
             }
         }, readRegion);
         if (image != null) {
             liveRegion.setBounds(readRegion);
         }
         return image;
+    }
+
+    /** Drawing the stroke being made - gradients along it may take a short cut */
+    private static boolean drawingLive;
+
+    private static void drawLiveNow(Canvas canvas, Paint paint, List<AlcShape> all, Key[] keys, AffineTransform transform, boolean smoothing) {
+        updateBase(paint, all, keys, transform, smoothing);
+        // The kept start laid in pixel for pixel, then the rest of the stroke over it
+        if (baseKeys.size() > 0) {
+            canvas.save();
+            canvas.resetMatrix();
+            try (io.github.humbleui.skija.Image kept = liveBase.makeImageSnapshot()) {
+                canvas.drawImage(kept, 0, 0);
+            }
+            canvas.restore();
+        }
+        drawShapes(canvas, paint, all, baseKeys.size(), all.size());
     }
 
     /** Start the kept picture again - the next live picture is drawn in full */
@@ -277,9 +295,10 @@ final class AlcSkia {
             baseTransform = new AffineTransform(transform);
             baseSmoothing = smoothing;
         }
-        // Shapes that looked the same the last two times are taken as finished
+        // Shapes whose outline was the same the last two times are taken as finished - a change of
+        // colour alone (a gradient along the stroke stretching) only paints them again, at once
         int stable = 0;
-        while (stable < keys.length && stable < lastKeys.length && keys[stable].same(lastKeys[stable])) {
+        while (stable < keys.length && stable < lastKeys.length && keys[stable].sameShape(lastKeys[stable])) {
             stable++;
         }
         int finished = Math.min(stable, lastStable);
@@ -288,7 +307,11 @@ final class AlcSkia {
         if (finished > baseKeys.size()) {
             Canvas base = liveBase.getCanvas();
             base.setMatrix(matrix(transform));
+            // What is kept is drawn properly, gradients along the stroke with all their slices
+            boolean live = drawingLive;
+            drawingLive = false;
             drawShapes(base, paint, all, baseKeys.size(), finished);
+            drawingLive = live;
             for (int i = baseKeys.size(); i < finished; i++) {
                 baseKeys.add(keys[i]);
             }
@@ -386,16 +409,22 @@ final class AlcSkia {
             Path path = path(shape.path, shape.version);
             if (AlcAlong.has(shape)) {
                 // A gradient along the stroke - slice by slice, each only where it belongs
-                for (AlcAlong.Slice slice : AlcAlong.slices(shape)) {
-                    canvas.save();
+                for (AlcAlong.Slice slice : AlcAlong.slices(shape, drawingLive)) {
                     if (slice.clip != null) {
-                        if (slice.skia == null) {
-                            slice.skia = convert(slice.clip);
+                        if (slice.skiaClip == null) {
+                            slice.skiaClip = convert(slice.clip);
                         }
-                        canvas.clipPath((Path) slice.skia, ClipMode.INTERSECT, false);
+                        canvas.save();
+                        canvas.clipPath((Path) slice.skiaClip, ClipMode.INTERSECT, false);
                     }
-                    drawShape(canvas, paint, shape, path, AlcAlong.paint(slice, true, shape), AlcAlong.paint(slice, false, shape));
-                    canvas.restore();
+                    if (slice.part != null && slice.skiaPart == null) {
+                        slice.skiaPart = convert(slice.part);
+                    }
+                    drawShape(canvas, paint, shape, slice.part != null ? (Path) slice.skiaPart : path,
+                            AlcAlong.paint(slice, true, shape), AlcAlong.paint(slice, false, shape));
+                    if (slice.clip != null) {
+                        canvas.restore();
+                    }
                 }
             } else {
                 drawShape(canvas, paint, shape, path, shape.getFillPaint(), shape.getPaint());
@@ -461,7 +490,6 @@ final class AlcSkia {
         Path path;
         int rule, version;
         java.awt.geom.Point2D current;
-        java.awt.geom.Rectangle2D bounds;
     }
 
     /** Skia paths kept for the shapes, so an unchanged shape is not converted again on every redraw */
@@ -470,10 +498,10 @@ final class AlcSkia {
     /** The Skia path for a Java2D path - made again only if the path has changed */
     private static Path path(GeneralPath awt, int version) {
         Cached c = paths.get(awt);
+        // A change shows in the change counter or a new end point - no need to go through every point
         java.awt.geom.Point2D current = awt.getCurrentPoint();
-        java.awt.geom.Rectangle2D bounds = awt.getBounds2D();
         int rule = awt.getWindingRule();
-        if (c != null && c.version == version && c.rule == rule && java.util.Objects.equals(c.current, current) && c.bounds.equals(bounds)) {
+        if (c != null && c.version == version && c.rule == rule && java.util.Objects.equals(c.current, current)) {
             return c.path;
         }
         if (c == null) {
@@ -486,7 +514,6 @@ final class AlcSkia {
         c.version = version;
         c.rule = rule;
         c.current = current;
-        c.bounds = bounds;
         return c.path;
     }
 

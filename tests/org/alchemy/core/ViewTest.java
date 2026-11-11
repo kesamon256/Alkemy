@@ -58,6 +58,8 @@ public class ViewTest {
     static void test() throws Exception {
         AlcCanvas c = Alchemy.canvas;
         c.setLineWidth(3);
+        // The checks look for dark ink - not whatever colour was last picked in the app
+        c.setColor(java.awt.Color.BLACK);
         c.setPaper(AlcCanvas.PAPER_GRID);
         // A reference stroke at 100%
         UndoSmokeTest.stroke(200, 300, 600, 300);

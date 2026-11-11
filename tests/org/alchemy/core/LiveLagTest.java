@@ -50,6 +50,7 @@ public class LiveLagTest {
         StringBuilder report = new StringBuilder();
         final String[] liveCount = new String[1];
         final String[] changes = new String[1];
+        final boolean[] gradientOn = new boolean[1];
         @SuppressWarnings("unchecked")
         final java.util.Map<AlcShape, String>[] snapshot = new java.util.Map[1];
         for (final String brush : list) {
@@ -84,6 +85,11 @@ public class LiveLagTest {
                             c.shapes.add(new AlcShape(p, new Color(r.nextInt(200), r.nextInt(200), r.nextInt(200)), 200, AlcConstants.STYLE_STROKE, 1 + r.nextInt(8)));
                         }
                         c.redraw(true);
+                        // With the gradient along the stroke switched on
+                        if (Boolean.getBoolean("gradient") && !gradientOn[0]) {
+                            MarkerDisplaceTest.click("affectButton", "Gradient");
+                            gradientOn[0] = true;
+                        }
                     } catch (Throwable e) {
                         e.printStackTrace();
                     }
@@ -190,6 +196,17 @@ public class LiveLagTest {
                     + "\n" + result("  (event)", events, points) + "\n  live shapes at the end: " + liveCount[0] + "\n  one move: " + changes[0];
             System.out.println(line);
             report.append(line).append('\n');
+        }
+        if (gradientOn[0]) {
+            SwingUtilities.invokeAndWait(new Runnable() {
+                public void run() {
+                    try {
+                        MarkerDisplaceTest.click("affectButton", "Gradient");
+                    } catch (Throwable e) {
+                        e.printStackTrace();
+                    }
+                }
+            });
         }
         System.out.println((Boolean.getBoolean("alchemy.noGpu") ? "Java2D" : AlcSkia.status) + "\n" + report);
         System.out.println(UndoSmokeTest.failures == 0 ? "ALL PASSED" : ("FAILURES: " + UndoSmokeTest.failures));
