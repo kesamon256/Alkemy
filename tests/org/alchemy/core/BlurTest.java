@@ -76,9 +76,9 @@ public class BlurTest {
         Rectangle2D all = bounds(0);
         double w2 = bounds(0).getWidth();
         SmoothRepeatTest.hover(axis[0] - 250, 300, false);
-        UndoSmokeTest.check("Q blurs the loop and its mirror into soft copies (" + once + " shapes)", once == 18);
+        UndoSmokeTest.check("Q blurs the loop and its mirror into soft copies (" + once + " shapes)", once == 14);
         UndoSmokeTest.check(String.format("more passes blur more (width %.0f -> %.0f px) without more shapes (%d)", w1, w2, more),
-                more == 18 && w2 > w1 + 4);
+                more == 14 && w2 > w1 + 4);
         UndoSmokeTest.check(String.format("both sides stay mirror images (centre %.1f, axis %d)", all.getCenterX(), axis[0]),
                 Math.abs(all.getCenterX() - axis[0]) < 2);
         Thread.sleep(900);

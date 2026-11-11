@@ -46,6 +46,8 @@ public class Blur extends AlcModule implements AlcConstants {
 
         AlcShape original;
         int level;
+        /** The outline of a solid shape flattened once for the blur layers - kept for the next passes */
+        GeneralPath flat;
         final ArrayList<AlcShape> copies = new ArrayList<AlcShape>();
     }
     /** Every copy points to its blur, so passing over any copy blurs the whole group further */
@@ -91,7 +93,6 @@ public class Blur extends AlcModule implements AlcConstants {
             return;
         }
         time = System.currentTimeMillis();
-        long time0 = System.nanoTime();
         // Like a soft brush: everything within its reach of the pen blurs - the reach follows the line weight.
         // With Mirror on, the brush also works at the mirrored places of the pen
         double reach = Math.max(12, canvas.getLineWidth() * 3);
@@ -121,16 +122,11 @@ public class Blur extends AlcModule implements AlcConstants {
         if (targets.isEmpty()) {
             return;
         }
-        long t0 = System.nanoTime();
         canvas.beginMotionEdit();
         for (AlcShape t : targets) {
             blur(t);
         }
-        long t1 = System.nanoTime();
         canvas.redraw(true);
-        if (Boolean.getBoolean("alchemy.debugBlur")) {
-            System.out.println("blur pick+make " + (t1 - time0) / 1000000 + " ms (make " + (t1 - t0) / 1000000 + "), redraw " + (System.nanoTime() - t1) / 1000000 + " ms, targets " + targets.size());
-        }
     }
 
     /** Paths with more pieces than this (charcoal, pencil grain) skip the slow exact geometry */
@@ -256,7 +252,7 @@ public class Blur extends AlcModule implements AlcConstants {
                         group.copies.add(moved);
                     }
                 }            } else {
-                group.copies.addAll(blurSolid(o, radius));
+                group.copies.addAll(blurSolid(o, radius, group));
             }
         }
         if (group.copies.isEmpty()) {
@@ -269,15 +265,19 @@ public class Blur extends AlcModule implements AlcConstants {
     }
 
     /** Layers inside and outside the edge of a solid shape */
-    private static final int SOLID_STEPS = 4;
+    private static final int SOLID_STEPS = 3;
 
     /**
      * A solid shape blurred like a picture: its area shrunk and grown in steps, each filled so
      * that together they fade smoothly - full colour deep inside, about half at the edge, nothing
      * a blur radius outside. Worked out from the closed outline, so every edge gets soft.
      */
-    private static List<AlcShape> blurSolid(AlcShape o, double radius) {
-        java.awt.geom.Area body = new java.awt.geom.Area(o.getPath());
+    private static List<AlcShape> blurSolid(AlcShape o, double radius, Blurred group) {
+        if (group.flat == null) {
+            group.flat = simplified(o.getPath(), 1.5);
+        }
+        // The more it is blurred, the less the small detail of the outline matters - fewer points, quicker work
+        java.awt.geom.Area body = new java.awt.geom.Area(simplified(group.flat, Math.max(1.5, radius * 0.2)));
         List<java.awt.geom.Area> layers = new ArrayList<java.awt.geom.Area>();
         // Outermost first: grown by radius ... the shape itself ... shrunk by radius
         for (int j = SOLID_STEPS; j >= -SOLID_STEPS; j--) {
@@ -287,7 +287,7 @@ public class Blur extends AlcModule implements AlcConstants {
                 continue;
             }
             java.awt.geom.Area band = new java.awt.geom.Area(new java.awt.BasicStroke((float) (d * 2),
-                    java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND).createStrokedShape(body));
+                    java.awt.BasicStroke.CAP_BUTT, java.awt.BasicStroke.JOIN_BEVEL).createStrokedShape(body));
             java.awt.geom.Area layer = new java.awt.geom.Area(body);
             if (j > 0) {
                 layer.add(band);
@@ -317,6 +317,37 @@ public class Blur extends AlcModule implements AlcConstants {
             copies.add(c);
         }
         return copies;
+    }
+    /**
+     * The outline as straight pieces at least step px long - curves flattened to well under a pixel.
+     * Looks the same once blurred, but the area work on it is many times quicker than on curves.
+     */
+    private static GeneralPath simplified(GeneralPath path, double step) {
+        GeneralPath out = new GeneralPath(path.getWindingRule());
+        java.awt.geom.PathIterator it = path.getPathIterator(null, 0.5);
+        double[] q = new double[6];
+        double lastX = 0, lastY = 0;
+        boolean started = false;
+        while (!it.isDone()) {
+            int type = it.currentSegment(q);
+            if (type == java.awt.geom.PathIterator.SEG_MOVETO) {
+                out.moveTo(q[0], q[1]);
+                lastX = q[0];
+                lastY = q[1];
+                started = true;
+            } else if (type == java.awt.geom.PathIterator.SEG_LINETO && started) {
+                double dx = q[0] - lastX, dy = q[1] - lastY;
+                if (dx * dx + dy * dy >= step * step) {
+                    out.lineTo(q[0], q[1]);
+                    lastX = q[0];
+                    lastY = q[1];
+                }
+            } else if (type == java.awt.geom.PathIterator.SEG_CLOSE) {
+                out.closePath();
+            }
+            it.next();
+        }
+        return out;
     }
     /** The same outline, drawn filled or as a line of the given width */
     private static AlcShape copy(AlcShape o, int style, float lineWidth, int alpha) {
