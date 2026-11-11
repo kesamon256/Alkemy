@@ -276,46 +276,39 @@ public class Blur extends AlcModule implements AlcConstants {
         if (group.flat == null) {
             group.flat = simplified(o.getPath(), 1.5);
         }
-        // The more it is blurred, the less the small detail of the outline matters - fewer points, quicker work
-        java.awt.geom.Area body = new java.awt.geom.Area(simplified(group.flat, Math.max(1.5, radius * 0.2)));
-        List<java.awt.geom.Area> layers = new ArrayList<java.awt.geom.Area>();
-        // Outermost first: grown by radius ... the shape itself ... shrunk by radius
-        for (int j = SOLID_STEPS; j >= -SOLID_STEPS; j--) {
-            double d = radius * Math.abs(j) / SOLID_STEPS;
-            if (j == 0 || d < 0.3) {
-                layers.add(new java.awt.geom.Area(body));
-                continue;
-            }
-            java.awt.geom.Area band = new java.awt.geom.Area(new java.awt.BasicStroke((float) (d * 2),
-                    java.awt.BasicStroke.CAP_BUTT, java.awt.BasicStroke.JOIN_BEVEL).createStrokedShape(body));
-            java.awt.geom.Area layer = new java.awt.geom.Area(body);
-            if (j > 0) {
-                layer.add(band);
-            } else {
-                layer.subtract(band);
-            }
-            layers.add(layer);
-        }
-        // How dark each zone should end up (zone z lies inside the z outermost layers), and the
-        // opacity of each layer that gets there when they are painted over each other
-        int count = layers.size();
+        GeneralPath outline = simplified(group.flat, Math.max(1.5, radius * 0.05));
+        // Many thin rings around the outline (also around the straight closing edge and any holes),
+        // one inside the other, so the steps between them are too small to see. Rounded corners,
+        // so a jagged outline does not grow spikes
+        int rings = (int) Math.max(SOLID_STEPS, Math.min(16, Math.round(radius / 2.5)));
         double opacity = o.getAlpha() / 255.0;
+        // Ring k reaches k/rings of the radius out. The zone between rings k-1 and k is covered by
+        // rings k..rings, so solve their opacities from the outermost in for a smooth fade
+        double[] alphas = new double[rings + 2];
+        double outside = 0;
+        for (int k = rings; k >= 1; k--) {
+            double target = opacity * 0.5 * (1 + Math.cos(Math.PI * (k - 0.5) / rings));
+            alphas[k] = (outside >= 1) ? 0 : 1 - (1 - target) / (1 - outside);
+            outside = target;
+        }
         List<AlcShape> copies = new ArrayList<AlcShape>();
-        double before = 0;
-        for (int z = 1; z <= count; z++) {
-            double target = opacity * 0.5 * (1 - Math.cos(Math.PI * z / count));
-            double layerAlpha = (before >= 1) ? 0 : 1 - (1 - target) / (1 - before);
-            before = target;
-            java.awt.geom.Area layer = layers.get(z - 1);
-            if (layer.isEmpty() || layerAlpha <= 0) {
+        for (int k = rings; k >= 1; k--) {
+            if (alphas[k] <= 0) {
                 continue;
             }
-            AlcShape c = o.customClone(new GeneralPath(layer));
+            float width = (float) (2 * radius * k / rings);
+            java.awt.Shape ring = new java.awt.BasicStroke(width, java.awt.BasicStroke.CAP_ROUND,
+                    java.awt.BasicStroke.JOIN_ROUND).createStrokedShape(outline);
+            GeneralPath path = new GeneralPath(GeneralPath.WIND_NON_ZERO);
+            path.append(ring, false);
+            AlcShape c = o.customClone(path);
             c.setStyle(STYLE_FILL);
-            c.setAlpha(Math.max(1, Math.min(255, (int) Math.round(layerAlpha * 255))));
+            c.setAlpha(Math.max(1, Math.min(255, (int) Math.round(alphas[k] * 255))));
             c.setSpine(null);
             copies.add(c);
         }
+        // The shape itself on top, full colour right up to its edge where the fade begins
+        copies.add(copy(o, STYLE_FILL, o.getLineWidth(), o.getAlpha()));
         return copies;
     }
     /**
@@ -331,6 +324,10 @@ public class Blur extends AlcModule implements AlcConstants {
         while (!it.isDone()) {
             int type = it.currentSegment(q);
             if (type == java.awt.geom.PathIterator.SEG_MOVETO) {
+                // Every part closed, so its ring also runs along the straight closing edge
+                if (started) {
+                    out.closePath();
+                }
                 out.moveTo(q[0], q[1]);
                 lastX = q[0];
                 lastY = q[1];
@@ -344,8 +341,12 @@ public class Blur extends AlcModule implements AlcConstants {
                 }
             } else if (type == java.awt.geom.PathIterator.SEG_CLOSE) {
                 out.closePath();
+                started = false;
             }
             it.next();
+        }
+        if (started) {
+            out.closePath();
         }
         return out;
     }
