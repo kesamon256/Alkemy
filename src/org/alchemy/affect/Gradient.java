@@ -80,11 +80,34 @@ public class Gradient extends AlcModule {
     private void createSubToolBarSection() {
         subToolBarSection = new AlcToolBarSubSection(this);
 
-        // The start colour - the current colour of the colour wheel
+        // The start colour - the current colour, the same as on the colour wheel
         final AlcSubButton startButton = new AlcSubButton("Start");
         startButton.setIcon(new Swatch(true));
-        startButton.setToolTipText("The colour every stroke starts with - the current colour");
+        startButton.setToolTipText("The colour every stroke starts with - the current colour, click to choose");
         startButton.setFocusable(false);
+        startButton.addActionListener(new ActionListener() {
+
+            public void actionPerformed(ActionEvent e) {
+                colorSelector.show(new ActionListener() {
+
+                    public void actionPerformed(ActionEvent event) {
+                        Color c = colorSelector.getColor();
+                        if (c != null) {
+                            canvas.setColor(c);
+                            canvas.refreshColorButtonRelay();
+                        }
+                        startButton.repaint();
+                    }
+                }, null, canvas.getColor());
+            }
+        });
+        // It follows the colour wheel too
+        canvas.addColorListener(new Runnable() {
+
+            public void run() {
+                startButton.repaint();
+            }
+        });
         subToolBarSection.add(startButton);
 
         // The end colour

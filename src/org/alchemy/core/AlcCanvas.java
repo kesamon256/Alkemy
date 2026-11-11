@@ -1538,6 +1538,16 @@ public class AlcCanvas extends JPanel implements AlcConstants, MouseListener, Mo
         } catch (IllegalArgumentException ex) {
             // Ignore the color out of range exception caused by out of bounds slider settings
         }
+        for (Runnable listener : colorListeners) {
+            listener.run();
+        }
+    }
+
+    private final java.util.List<Runnable> colorListeners = new java.util.concurrent.CopyOnWriteArrayList<Runnable>();
+
+    /** Be told when the pen colour changes - from the colour wheel, a swatch, a module */
+    public void addColorListener(Runnable listener) {
+        colorListeners.add(listener);
     }
     
     // relay method to allow modules access to the toolbar color button

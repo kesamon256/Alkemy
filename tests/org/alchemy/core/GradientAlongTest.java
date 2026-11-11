@@ -108,6 +108,23 @@ public class GradientAlongTest {
         return null;
     }
 
+    static class AbstractButtonFinder {
+        javax.swing.AbstractButton find(Container root, String text) {
+            for (Component child : root.getComponents()) {
+                if (child instanceof javax.swing.AbstractButton && text.equals(((javax.swing.AbstractButton) child).getText())) {
+                    return (javax.swing.AbstractButton) child;
+                }
+                if (child instanceof Container) {
+                    javax.swing.AbstractButton found = find((Container) child, text);
+                    if (found != null) {
+                        return found;
+                    }
+                }
+            }
+            return null;
+        }
+    }
+
     static AlcAbstractSpinner findSpinner(Container root, String title) {
         for (Component child : root.getComponents()) {
             if (child instanceof AlcAbstractSpinner && title.equals(((AlcAbstractSpinner) child).label.getText())) {
@@ -145,6 +162,32 @@ public class GradientAlongTest {
                     savedEnd[1] = fade.get(g);
                     fade.setBoolean(g, false);
                     endField.set(g, new Color(30, 60, 230));
+                } catch (Throwable e) {
+                    e.printStackTrace();
+                    UndoSmokeTest.failures++;
+                }
+            }
+        });
+        // The start swatch chooses the start colour - the pen colour
+        SwingUtilities.invokeAndWait(new Runnable() {
+            public void run() {
+                try {
+                    AbstractButtonFinder f = new AbstractButtonFinder();
+                    javax.swing.AbstractButton start = f.find(Alchemy.toolBar, "Start");
+                    UndoSmokeTest.check("the gradient has a Start button", start != null);
+                    Color before = Alchemy.canvas.getColor();
+                    start.doClick();
+                    AlcColorSelector selector = Alchemy.colorSelector;
+                    UndoSmokeTest.check("clicking Start opens the colour picker", selector.isVisible());
+                    selector.setColor(new Color(40, 200, 90));
+                    Field ok = AlcColorSelector.class.getDeclaredField("okButton");
+                    ok.setAccessible(true);
+                    ((javax.swing.JButton) ok.get(selector)).doClick();
+                    Color after = Alchemy.canvas.getColor();
+                    UndoSmokeTest.check("the picked colour becomes the start colour (" + rgb(after) + ")",
+                            Math.abs(after.getRed() - 40) <= 3 && Math.abs(after.getGreen() - 200) <= 3 && Math.abs(after.getBlue() - 90) <= 3);
+                    selector.setVisible(false);
+                    Alchemy.canvas.setColor(before);
                 } catch (Throwable e) {
                     e.printStackTrace();
                     UndoSmokeTest.failures++;
