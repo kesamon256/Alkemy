@@ -7,7 +7,7 @@
 #   powershell -ExecutionPolicy Bypass -File build.ps1 -Dist dist\Alchemy-test   # build into another folder
 #                                                                 # (Alkemy.exe with its own Java - nothing to install)
 
-param([switch]$Run, [switch]$Package, [string]$Version = '1.0.0', [string]$Dist = 'dist\Alchemy')
+param([switch]$Run, [switch]$Package, [string]$Version = '1.1.0', [string]$Dist = 'dist\Alchemy')
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
